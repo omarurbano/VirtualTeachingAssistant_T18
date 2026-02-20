@@ -38,12 +38,12 @@ All planned Sprint 1 deliverables have been completed. The project requirements 
   
 ## Code Files for Review
 Please review the following code files, which were actively developed during this sprint, for quality:
- * [System Architecture Diagram](https://github.com/your_repo/diagram)
- * [Requirements Specification Document](https://github.com/your_repo/docs)
- * [Evaluation Metrics Definition](https://github.com/your_repo/docs)
- * [RAG Pipeline Implementation](https://github.com/your_repo/LangChain_Chat_Data/rag_demo.py)
- * [PDF Extraction Module](https://github.com/your_repo/extraction)
- * [Audio Transcription Module](https://github.com/your_repo/audio)
+ * [System Architecture Diagram]
+ * [Requirements Specification Document]
+ * [Evaluation Metrics Definition]
+ * [RAG Pipeline Implementation]
+ * [PDF Extraction Module]
+ * [Audio Transcription Module]
  
 ## Retrospective Summary
 Here's what went well:
