@@ -1,7 +1,7 @@
 # Sprint 1 Report (Dates from 1/20/2026 - 2/20/2026)
 
 ## YouTube link of Sprint * Video (Make this video unlisted)
-https://www.youtube.com/watch?v=placeholder
+https://youtu.be/nKkJCJVQLIY
 
 ## What's New (User Facing)
  * Project Requirements & Scope Document completed defining functional and non-functional requirements for the Virtual Teaching Assistant system
