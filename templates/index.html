@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPT_S 421 VTA - Document RAG</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo"></div>
+                <h1><span>CPT_S 421</span> VTA Document RAG</h1>
+            </div>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">ready</span>
+                </div>
+                <div class="status-item">
+                    <span>v1.0</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Chat Area -->
+        <main class="chat-main">
+            <!-- Welcome Screen -->
+            <div class="welcome-screen" id="welcomeScreen">
+                <pre class="ascii-art">
+╔═══════════════════════════════════════════════════════╗
+║   CPT S 421 - VISION THINGS AI (VTA)                ║
+║   Document Question & Answer System                   ║
+║   Retrieval Augmented Generation (RAG)               ║
+╚═══════════════════════════════════════════════════════╝
+                </pre>
+                <h2 class="welcome-title">
+                    <span class="accent">></span> Document Question & Answer System
+                </h2>
+                <p class="welcome-subtitle">
+                    // Retrieval-Augmented Generation for PDF, DOCX, TXT
+                </p>
+                
+                <div class="welcome-actions">
+                    <button class="terminal-btn" id="quickUpload">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <span class="prompt"></span>upload
+                    </button>
+                    <button class="terminal-btn" id="quickHelp">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        <span class="prompt"></span>help
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chat Messages -->
+            <div class="chat-messages" id="chatMessages" style="display: none;">
+                <div class="messages-container" id="messagesContainer"></div>
+            </div>
+
+            <!-- Loading -->
+            <div class="loading-container" id="loadingIndicator">
+                <div class="cursor-line">processing query</div>
+            </div>
+        </main>
+
+        <!-- Input Area -->
+        <div class="input-container">
+            <div class="input-wrapper">
+                <!-- Files Bar -->
+                <div class="files-bar" id="filesBar">
+                    <span style="color: var(--text-dim); font-size: 0.75rem;">attached:</span>
+                    <div id="filesList" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+                    <button class="files-clear" id="clearFilesBtn">[clear]</button>
+                </div>
+
+                <!-- Command Line Input -->
+                <div class="command-line">
+                    <span class="prompt-symbol"></span>
+                    <div class="input-area">
+                        <textarea 
+                            id="messageInput" 
+                            placeholder="enter your query..." 
+                            rows="1"
+                            autocomplete="off"
+                            spellcheck="false"
+                        ></textarea>
+                    </div>
+                    <button class="attach-btn" id="attachBtn" title="Attach file">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                        </svg>
+                    </button>
+                </div>
+                <p class="input-info">// responses are grounded in your uploaded documents only</p>
+            </div>
+        </div>
+
+        <!-- Hidden File Input -->
+        <input type="file" id="fileInput" accept=".pdf,.docx,.txt" multiple>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

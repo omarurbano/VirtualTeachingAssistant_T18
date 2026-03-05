@@ -1,0 +1,28 @@
+# Multi File RAG Dependencies
+
+
+# Web Framework
+flask>=2.3.0
+flask-cors>=4.0.0
+werkzeug>=2.3.0
+
+# Data Processing
+numpy>=1.24.0
+
+# LangChain & Document Loaders (Must Have)
+langchain-core>=0.1.0
+langchain-community>=0.0.10
+langchain-text-splitters>=0.0.1
+
+# Document Processing
+pypdf>=3.0.0
+python-docx>=1.0.0
+
+# Embeddings (Must Have)
+sentence-transformers>=2.2.0
+
+# Optional: Audio Transcription
+# openai-whisper>=20231117
+
+# Utilities
+python-magic>=0.4.27
