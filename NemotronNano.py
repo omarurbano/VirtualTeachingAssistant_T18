@@ -9,7 +9,7 @@ invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
 stream = False
 query = "Describe in detail what you see in the image."
 
-kApiKey = "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"
+kApiKey = "[]"
 
 # ext: {mime, media_type}
 kSupportedList = {
