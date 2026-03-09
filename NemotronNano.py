@@ -4,12 +4,19 @@ import requests
 import os
 import base64
 import sys
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+api_key = os.getenv("NM_API_KEY")
+
 
 invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
 stream = False
 query = "Describe in detail what you see in the image."
 
-kApiKey = "[]"
+kApiKey = api_key
 
 # ext: {mime, media_type}
 kSupportedList = {
