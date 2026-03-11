@@ -63,6 +63,14 @@
                         </svg>
                         <span class="prompt"></span>help
                     </button>
+                    <button class="terminal-btn" id="quickImageUpload" title="Upload image for vision analysis">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                        <span class="prompt"></span>image
+                    </button>
                 </div>
             </div>
 
@@ -85,6 +93,13 @@
                     <span style="color: var(--text-dim); font-size: 0.75rem;">attached:</span>
                     <div id="filesList" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
                     <button class="files-clear" id="clearFilesBtn">[clear]</button>
+                </div>
+
+                <!-- Images Bar -->
+                <div class="images-bar" id="imagesBar" style="display: none;">
+                    <span style="color: var(--text-dim); font-size: 0.75rem;">images:</span>
+                    <div id="imagesList" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+                    <button class="files-clear" id="clearImagesBtn">[clear]</button>
                 </div>
 
                 <!-- Command Line Input -->
@@ -110,7 +125,7 @@
         </div>
 
         <!-- Hidden File Input -->
-        <input type="file" id="fileInput" accept=".pdf,.docx,.txt" multiple>
+        <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,.gif,.bmp" multiple>
     </div>
 
     <script src="/static/script.js"></script>

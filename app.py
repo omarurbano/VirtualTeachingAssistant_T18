@@ -41,7 +41,19 @@ CORS(app)
 # Configuration
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
-app.config['ALLOWED_EXTENSIONS'] = {'pdf', 'docx', 'txt', 'mp3', 'wav', 'ogg', 'm4a', 'flac'}
+# Document extensions
+DOCUMENT_EXTENSIONS = {'pdf', 'docx', 'txt', 'mp3', 'wav', 'ogg', 'm4a', 'flac'}
+
+# Image extensions for vision model
+IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'tif'}
+
+# Combined extensions
+app.config['ALLOWED_EXTENSIONS'] = DOCUMENT_EXTENSIONS | IMAGE_EXTENSIONS
+
+# Separate config for image-specific limits
+app.config['MAX_IMAGE_SIZE'] = 10 * 1024 * 1024  # 10MB for images
+app.config['ALLOWED_IMAGE_EXTENSIONS'] = IMAGE_EXTENSIONS
+
 app.config['CHUNK_SIZE'] = 1000
 app.config['CHUNK_OVERLAP'] = 200
 app.config['MAX_CITATIONS'] = 10
@@ -49,6 +61,13 @@ app.config['SIMILARITY_THRESHOLD'] = 0.3
 
 # Create upload directory
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Extracted images directory (for saved image files from PDFs)
+app.config['EXTRACTED_IMAGES_DIR'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'extracted_images')
+os.makedirs(app.config['EXTRACTED_IMAGES_DIR'], exist_ok=True)
+
+# Multimodal processing flag
+app.config['USE_MULTIMODAL_PDF'] = True  # Toggle for advanced PDF processing
 
 # ============================================================================
 # DEPENDENCY CHECK
@@ -58,6 +77,46 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 SENTENCE_TRANSFORMERS_AVAILABLE = False
 LANGCHAIN_AVAILABLE = False
 WHISPER_AVAILABLE = False
+NEMOTRON_AVAILABLE = False
+
+# Import sentence transformers
+try:
+    from sentence_transformers import SentenceTransformer
+    import numpy as np
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+    logger.info("sentence-transformers loaded successfully")
+except ImportError as e:
+    logger.warning(f"sentence-transformers not available: {e}")
+
+# LangChain imports
+try:
+    from langchain_community.chat_models import ChatOllama
+    from langchain.prompts import ChatPromptTemplate
+    from langchain.schema.output_parser import StrOutputParser
+    from langchain.schema import Document
+    LANGCHAIN_AVAILABLE = True
+    logger.info("langchain loaded successfully")
+except ImportError as e:
+    logger.warning(f"langchain not available: {e}")
+
+# Whisper for audio transcription
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+    logger.info("whisper loaded successfully")
+except ImportError as e:
+    logger.warning(f"whisper not available: {e}")
+
+# Vision model imports - Nemotron for image description
+try:
+    import sys
+    # Add current directory to path for imports
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from NemotronNano import GetDescriptionFromLLM, kSupportedList
+    NEMOTRON_AVAILABLE = True
+    logger.info("Vision model (Nemotron) loaded successfully")
+except ImportError as e:
+    logger.warning(f"Vision model not available: {e}")
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -73,6 +132,17 @@ try:
     logger.info("LangChain available")
 except ImportError as e:
     logger.warning(f"LangChain not available: {e}")
+
+# Multimodal PDF processing imports
+try:
+    from pdf_extractor import PyMuPDFExtractor
+    from multimodal_chunker import MultimodalChunker, create_chunks_from_pdf
+    from image_analyzer import create_image_analyzer
+    MULTIMODAL_AVAILABLE = True
+    logger.info("Multimodal PDF processing available")
+except ImportError as e:
+    MULTIMODAL_AVAILABLE = False
+    logger.warning(f"Multimodal processing not available: {e}")
 
 try:
     import whisper
@@ -293,12 +363,36 @@ class SimpleAnswerGenerator:
         # Build answer from top results
         context_parts = []
         for r in retrieved_results[:3]:
-            content = r.get('content', r.get('page_content', ''))[:200]
-            context_parts.append(content)
+            content = r.get('content', r.get('page_content', ''))
+            # Clean up the content
+            content = content.strip()
+            # Remove excessive whitespace
+            content = ' '.join(content.split())
+            # Take up to 600 characters per chunk, but try to end at sentence boundary
+            if len(content) > 600:
+                # Find the last sentence ending before 600 chars
+                truncate_point = 600
+                for sep in ['. ', '! ', '? ', '\n\n']:
+                    last_sep = content[:truncate_point].rfind(sep)
+                    if last_sep > truncate_point * 0.5:  # At least halfway
+                        truncate_point = last_sep + len(sep)
+                        break
+                content = content[:truncate_point] + "..."
+            
+            if content:
+                context_parts.append(content)
         
-        context = "\n\n".join(context_parts)
+        # Combine context with proper spacing
+        if len(context_parts) == 1:
+            context = context_parts[0]
+        else:
+            context = "\n\n---\n\n".join(context_parts)
         
-        answer = f"Based on the uploaded documents:\n\n{context}"
+        # Build final answer
+        if len(retrieved_results) == 1:
+            answer = f"Based on the uploaded document:\n\n{context}"
+        else:
+            answer = f"Based on the uploaded documents, here are the most relevant passages:\n\n{context}"
         
         if best_score >= 0.7:
             confidence = "high"
@@ -410,9 +504,148 @@ def generate_file_id() -> str:
     return hashlib.md5(str(datetime.now().isoformat()).encode()).hexdigest()[:12]
 
 
+def allowed_image(filename: str) -> bool:
+    """
+    Check if the uploaded file is an allowed image type.
+    
+    Args:
+        filename: Name of the uploaded file
+        
+    Returns:
+        bool: True if allowed, False otherwise
+    """
+    if '.' not in filename:
+        return False
+    ext = filename.rsplit('.', 1)[1].lower()
+    return ext in app.config.get('ALLOWED_IMAGE_EXTENSIONS', IMAGE_EXTENSIONS)
+
+
+def validate_image_file(file, max_size: int = None) -> Dict[str, Any]:
+    """
+    Comprehensive validation for image uploads.
+    
+    Args:
+        file: FileStorage object from Flask
+        max_size: Maximum file size in bytes (defaults to MAX_IMAGE_SIZE)
+        
+    Returns:
+        dict: {'valid': bool, 'error': str or None, 'size': int}
+    """
+    max_size = max_size or app.config.get('MAX_IMAGE_SIZE', 10 * 1024 * 1024)
+    
+    # Check filename
+    if not file.filename or file.filename == '':
+        return {'valid': False, 'error': 'No filename provided', 'size': 0}
+    
+    # Check extension
+    if not allowed_image(file.filename):
+        return {'valid': False, 'error': f'Image format not allowed. Supported: {", ".join(app.config.get("ALLOWED_IMAGE_EXTENSIONS", IMAGE_EXTENSIONS))}', 'size': 0}
+    
+    # Check file size (seek to end, then back to start)
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    
+    if size > max_size:
+        return {'valid': False, 'error': f'Image too large. Maximum size: {max_size // (1024*1024)}MB', 'size': size}
+    
+    if size == 0:
+        return {'valid': False, 'error': 'Empty file uploaded', 'size': 0}
+    
+    return {'valid': True, 'error': None, 'size': size}
+
+
 # ============================================================================
 # FILE PROCESSING
 # ============================================================================
+
+def process_pdf_multimodal(file_path: str, file_id: str) -> Dict[str, Any]:
+    """
+    Process PDF using multimodal extraction to capture text, tables, and images.
+
+    Args:
+        file_path: Path to PDF file
+        file_id: Unique file identifier
+
+    Returns:
+        Dict with processing results
+    """
+    result = {
+        'success': False,
+        'file_id': file_id,
+        'file_name': os.path.basename(file_path),
+        'file_type': 'pdf',
+        'chunks_created': 0,
+        'elements_extracted': {'text': 0, 'tables': 0, 'images': 0},
+        'error': None
+    }
+
+    try:
+        if not MULTIMODAL_AVAILABLE:
+            result['error'] = "Multimodal processing not available. Install pymupdf, transformers, torch."
+            logger.error("Multimodal dependencies not available")
+            return result
+
+        logger.info(f"Processing PDF with multimodal extraction: {file_path}")
+
+        # Get extracted images directory
+        extracted_images_dir = app.config.get('EXTRACTED_IMAGES_DIR')
+
+        # Use the end-to-end chunk creation function
+        chunks = create_chunks_from_pdf(
+            pdf_path=file_path,
+            file_id=file_id,
+            filename=os.path.basename(file_path),
+            output_image_dir=extracted_images_dir
+        )
+
+        if not chunks:
+            result['error'] = "No content extracted from PDF"
+            return result
+
+        # Separate into LangChain documents for embedding
+        documents = [chunk.to_langchain_document() for chunk in chunks]
+
+        # Generate embeddings
+        embeddings = app_state.embedding_manager.embed_documents(documents)
+        metadatas = [doc.metadata for doc in documents]
+
+        # Add to vector store
+        app_state.vector_store.add_documents(documents, embeddings, metadatas)
+
+        # Count element types
+        element_counts = {'text': 0, 'table': 0, 'image': 0}
+        for chunk in chunks:
+            element_counts[chunk.element_type] += 1
+
+        result['success'] = True
+        result['chunks_created'] = len(chunks)
+        result['elements_extracted'] = element_counts
+
+        # Store file info
+        app_state.uploaded_files[file_id] = {
+            'file_path': file_path,
+            'filename': os.path.basename(file_path),
+            'file_type': '.pdf',
+            'document_id': file_id,
+            'chunks': len(chunks),
+            'upload_time': datetime.now().isoformat(),
+            'multimodal': True,
+            'element_counts': element_counts
+        }
+
+        logger.info(f"PDF processed multimodal: {len(chunks)} chunks "
+                    f"({element_counts['text']} text, {element_counts['table']} tables, "
+                    f"{element_counts['image']} images)")
+
+    except Exception as e:
+        logger.error(f"Multimodal PDF processing error: {e}")
+        import traceback
+        traceback.print_exc()
+        result['error'] = str(e)
+
+    return result
+
 
 def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
     """Process an uploaded file based on its type."""
@@ -432,9 +665,14 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
         documents = []
         
         if file_ext == 'pdf':
-            logger.info(f"Processing PDF: {file_path}")
-            documents = app_state.document_processor.load_document(file_path)
-            
+            # Use multimodal processing if available and enabled, otherwise fallback to basic
+            if MULTIMODAL_AVAILABLE and app.config.get('USE_MULTIMODAL_PDF', True):
+                logger.info(f"Processing PDF with multimodal extraction: {file_path}")
+                return process_pdf_multimodal(file_path, file_id)
+            else:
+                logger.info(f"Processing PDF with basic loader: {file_path}")
+                documents = app_state.document_processor.load_document(file_path)
+                
         elif file_ext == 'docx':
             logger.info(f"Processing DOCX: {file_path}")
             documents = app_state.document_processor.load_document(file_path)
@@ -518,6 +756,112 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
     return result
 
 
+def process_image_file(file_path: str, file_id: str) -> Dict[str, Any]:
+    """
+    Process an uploaded image file using BLIP-2 for captioning and Tesseract for OCR.
+    
+    Args:
+        file_path: Path to the uploaded image
+        file_id: Unique identifier for the file
+        
+    Returns:
+        dict: Processing result with success status and details including caption and OCR text
+    """
+    result = {
+        'success': False,
+        'file_id': file_id,
+        'file_path': file_path,
+        'file_name': os.path.basename(file_path),
+        'file_type': 'image',
+        'processing_mode': 'multimodal',
+        'description': None,
+        'caption': None,
+        'ocr_text': None,
+        'has_text': False,
+        'error': None
+    }
+    
+    try:
+        # Read image file as bytes
+        with open(file_path, 'rb') as f:
+            image_bytes = f.read()
+        
+        if not image_bytes:
+            result['error'] = 'Empty image file'
+            logger.error(f"Empty image file: {file_path}")
+            return result
+        
+        # Try to use ImageAnalyzer (BLIP-2 + Tesseract) as primary
+        logger.info(f"Processing image with BLIP-2 and Tesseract: {file_path}")
+        
+        try:
+            # Create image analyzer
+            analyzer = create_image_analyzer()
+            
+            # Perform comprehensive analysis
+            analysis = analyzer.analyze(image_bytes)
+            
+            # Build comprehensive description
+            description_parts = []
+            
+            if analysis.get('caption'):
+                description_parts.append(f"**Image Description:** {analysis['caption']}")
+                result['caption'] = analysis['caption']
+            
+            if analysis.get('ocr_text'):
+                description_parts.append(f"**Text in Image:**\n{analysis['ocr_text']}")
+                result['ocr_text'] = analysis['ocr_text']
+                result['has_text'] = True
+            
+            if description_parts:
+                result['description'] = "\n\n".join(description_parts)
+                result['success'] = True
+                result['processing_mode'] = 'blip2_tesseract'
+                logger.info(f"Image analyzed successfully with BLIP-2 and Tesseract: {file_path}")
+            else:
+                # No caption or OCR text extracted
+                result['error'] = 'No content could be extracted from the image. The image may be corrupted or unsupported.'
+                logger.warning(f"No content extracted from image: {file_path}")
+                
+        except Exception as analyzer_error:
+            logger.warning(f"ImageAnalyzer failed, falling back to Nemotron: {analyzer_error}")
+            
+            # Fallback to Nemotron if ImageAnalyzer fails
+            if NEMOTRON_AVAILABLE:
+                try:
+                    logger.info(f"Using Nemotron fallback for: {file_path}")
+                    nemotron_description = GetDescriptionFromLLM(file_path, max_retries=2, timeout=90)
+                    
+                    if nemotron_description and not ('failed' in nemotron_description.lower() or 'error' in nemotron_description.lower() or 'timed out' in nemotron_description.lower()):
+                        result['description'] = nemotron_description
+                        result['success'] = True
+                        result['processing_mode'] = 'nemotron_fallback'
+                        logger.info(f"Image processed with Nemotron fallback: {file_path}")
+                    else:
+                        result['error'] = f"All vision methods failed. Last attempt returned: {nemotron_description}"
+                        logger.error(f"Nemotron also failed for: {file_path}")
+                except Exception as nemotron_error:
+                    result['error'] = f"Both BLIP-2/Tesseract and Nemotron failed. Primary error: {analyzer_error}, Fallback error: {nemotron_error}"
+                    logger.error(f"All vision methods failed for {file_path}")
+            else:
+                result['error'] = f"Image analysis failed and Nemotron fallback not available. Error: {analyzer_error}"
+                logger.error(f"No fallback available for {file_path}")
+        
+    except FileNotFoundError as e:
+        result['error'] = f'Image file not found: {str(e)}'
+        logger.error(f"Image file not found: {file_path}")
+    except ValueError as e:
+        result['error'] = f'Invalid image format: {str(e)}'
+        logger.error(f"Invalid image format: {file_path}")
+    except Exception as e:
+        result['error'] = f'Processing failed: {str(e)}'
+        logger.error(f"Image processing error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return result
+
+
 # ============================================================================
 # QUERY PROCESSING
 # ============================================================================
@@ -563,17 +907,19 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
             total_documents=len(app_state.uploaded_files)
         )
         
-        # Build citations
+        # Build enhanced citations with multimodal support
         citations = []
         for doc in search_results:
             metadata = doc.metadata if hasattr(doc, 'metadata') else {}
-            page_num = metadata.get('page_number', metadata.get('page', 'N/A'))
+            page_num = metadata.get('page_number', 'N/A')
+            element_type = metadata.get('element_type', 'text')  # 'text', 'table', 'image'
             
             content = doc.page_content if hasattr(doc, 'page_content') else str(doc)
             verbatim = content[:300]
             if len(content) > 300:
                 verbatim += "..."
             
+            # Build base citation
             citation = {
                 'source_file': metadata.get('filename', 'Unknown'),
                 'page_number': page_num,
@@ -581,19 +927,40 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
                 'similarity_score': metadata.get('similarity_score', 0),
                 'verbatim': verbatim,
                 'full_text': content,
-                'source_type': metadata.get('source_type', 'document'),
-                'location': f"Page {page_num}, Chunk {metadata.get('chunk_index', 0) + 1}"
+                'source_type': element_type,
+                'location': f"Page {page_num}, {element_type.title()}"
             }
+            
+            # Add type-specific fields
+            if element_type == 'table':
+                citation['is_table'] = True
+                citation['markdown_table'] = content  # Table is already in Markdown
+                citation['location'] = f"Page {page_num}, Table"
+                if 'table_rows' in metadata:
+                    citation['table_rows'] = metadata['table_rows']
+                if 'table_columns' in metadata:
+                    citation['table_columns'] = metadata['table_columns']
+            
+            elif element_type == 'image':
+                citation['is_image'] = True
+                citation['image_caption'] = metadata.get('image_caption', '')
+                citation['ocr_text'] = metadata.get('ocr_text', '')
+                citation['has_text'] = metadata.get('has_text', False)
+                
+                # If image was saved, provide URL
+                if 'image_path' in metadata:
+                    # Convert absolute path to relative URL
+                    img_filename = os.path.basename(metadata['image_path'])
+                    citation['image_url'] = f"/static/extracted_images/{img_filename}"
+                elif 'element_id' in metadata:
+                    # Fallback: construct expected path
+                    img_filename = f"{metadata['element_id']}.png"
+                    citation['image_url'] = f"/static/extracted_images/{img_filename}"
+            
             citations.append(citation)
         
-        # Build answer text
+        # Build answer text (citations are sent separately for frontend rendering)
         answer_text = generated_answer.answer_text
-        
-        if citations:
-            answer_text += "\n\nSources:\n"
-            for i, cite in enumerate(citations, 1):
-                answer_text += f"[{i}] {cite['source_file']} ({cite['location']})\n"
-                answer_text += f"    \"{cite['verbatim']}\"\n"
         
         result['success'] = True
         result['answer'] = answer_text
@@ -654,7 +1021,7 @@ def initialize():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    """Handle file upload."""
+    """Handle file upload (documents and images)."""
     try:
         # Initialize if needed
         if not app_state.is_initialized:
@@ -675,6 +1042,12 @@ def upload_file():
                 'error': 'No file selected'
             }), 400
         
+        # Check if it's an image file - if so, process as image
+        if allowed_image(file.filename):
+            # Process as image - delegate to image upload logic
+            return process_image_upload(file)
+        
+        # Otherwise, process as document
         if not allowed_file(file.filename):
             return jsonify({
                 'success': False,
@@ -709,6 +1082,142 @@ def upload_file():
             'error': str(e)
         }), 500
 
+
+def process_image_upload(file) -> Any:
+    """Process an image file upload (used by both endpoints)."""
+    try:
+        # Validate image
+        validation = validate_image_file(file)
+        if not validation['valid']:
+            return jsonify({'success': False, 'error': validation['error']}), 400
+        
+        # Save the file
+        file_id = generate_file_id()
+        filename = secure_filename(file.filename)
+        
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}_{filename}")
+        file.save(file_path)
+        
+        logger.info(f"Image saved: {file_path}")
+        
+        # Process the image
+        result = process_image_file(file_path, file_id)
+        
+        # Store file info in app_state regardless of processing success
+        # so the user can see the image in the UI even if analysis failed
+        if not hasattr(app_state, 'uploaded_images'):
+            app_state.uploaded_images = {}
+        
+        app_state.uploaded_images[file_id] = {
+            'file_path': file_path,
+            'file_name': filename,
+            'upload_time': datetime.now().isoformat(),
+            'description': result.get('description'),
+            'has_error': not result['success'],
+            'error_message': result.get('error')
+        }
+        
+        # Return success even if analysis had issues, but include error info
+        # The file is kept and shown in UI
+        status_code = 200 if result['success'] else 200  # Always 200 to keep file
+        return jsonify(result), status_code
+        
+    except Exception as e:
+        logger.error(f"Image upload error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/upload/image', methods=['POST'])
+def upload_image():
+    """Handle image file upload for vision model processing."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+        
+        validation = validate_image_file(file)
+        if not validation['valid']:
+            return jsonify({'success': False, 'error': validation['error']}), 400
+        
+        file_id = generate_file_id()
+        filename = secure_filename(file.filename)
+        
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}_{filename}")
+        file.save(file_path)
+        
+        logger.info(f"Image saved: {file_path}")
+        
+        result = process_image_file(file_path, file_id)
+        
+        # Store file info in app_state regardless of processing success
+        if not hasattr(app_state, 'uploaded_images'):
+            app_state.uploaded_images = {}
+        
+        app_state.uploaded_images[file_id] = {
+            'file_path': file_path,
+            'file_name': filename,
+            'upload_time': datetime.now().isoformat(),
+            'description': result.get('description'),
+            'has_error': not result['success'],
+            'error_message': result.get('error')
+        }
+        
+        # Return 200 even if analysis failed, so file is kept
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Image upload error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/images', methods=['GET'])
+def list_images():
+    """List all uploaded images."""
+    try:
+        images = []
+        if hasattr(app_state, 'uploaded_images'):
+            for image_id, info in app_state.uploaded_images.items():
+                images.append({
+                    'file_id': image_id,
+                    'file_name': info['file_name'],
+                    'upload_time': info['upload_time'],
+                    'description': info.get('description', '')[:100] + '...' if info.get('description') else None
+                })
+        return jsonify({'success': True, 'images': images})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/images/<file_id>', methods=['DELETE'])
+def delete_image(file_id):
+    """Delete an uploaded image."""
+    try:
+        if not hasattr(app_state, 'uploaded_images') or file_id not in app_state.uploaded_images:
+            return jsonify({'success': False, 'error': 'Image not found'}), 404
+        
+        info = app_state.uploaded_images[file_id]
+        if os.path.exists(info['file_path']):
+            os.remove(info['file_path'])
+        
+        del app_state.uploaded_images[file_id]
+        
+        return jsonify({'success': True, 'message': 'Image deleted'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/query', methods=['POST'])
 def query():
     """Handle query request."""
@@ -729,14 +1238,69 @@ def query():
                 'error': 'Empty question'
             }), 400
         
-        if not app_state.uploaded_files:
+        # Check for uploaded images first
+        has_images = hasattr(app_state, 'uploaded_images') and app_state.uploaded_images
+        has_documents = app_state.uploaded_files
+        
+        # If neither documents nor images, return error
+        if not has_documents and not has_images:
             return jsonify({
                 'success': False,
-                'error': 'No documents uploaded. Please upload documents first.'
+                'error': 'No documents or images uploaded. Please upload files first.'
             }), 400
         
+        # If we have images but no documents, answer based on image descriptions
+        if has_images and not has_documents:
+            # Answer based on uploaded images, but only those that were successfully analyzed
+            image_results = []
+            failed_images = []
+            
+            for image_id, info in app_state.uploaded_images.items():
+                description = info.get('description', 'No description available')
+                # Skip images that failed analysis (indicated by has_error flag or error in description)
+                if info.get('has_error', False) or (description and ('failed' in description.lower() or 'error' in description.lower())):
+                    failed_images.append(info['file_name'])
+                    continue
+                image_results.append({
+                    'file_name': info['file_name'],
+                    'description': description
+                })
+            
+            if not image_results:
+                # All images failed analysis
+                return jsonify({
+                    'success': False,
+                    'error': 'No images were successfully analyzed. Please try uploading images again or use a different image.',
+                    'failed_images': failed_images
+                }), 400
+            
+            # Generate answer from image descriptions
+            answer_text = "I analyzed the following uploaded images:\n\n"
+            for idx, img in enumerate(image_results, 1):
+                answer_text += f"### Image {idx}: {img['file_name']}\n"
+                answer_text += f"{img['description']}\n\n"
+            
+            # Add the user's question context
+            answer_text += f"---\n\n**Your question:** {question}\n\n"
+            
+            if failed_images:
+                answer_text += f"\nNote: {len(failed_images)} image(s) could not be analyzed: {', '.join(failed_images)}\n"
+            
+            return jsonify({
+                'success': True,
+                'answer': answer_text,
+                'citations': [],
+                'source_type': 'images'
+            })
+        
+        # Otherwise, proceed with document-based RAG
         max_results = data.get('max_results', 5)
         result = retrieve_and_answer(question, max_results=max_results)
+        
+        # If we also have images, include them in the response
+        if has_images:
+            result['has_images'] = True
+            result['image_count'] = len(app_state.uploaded_images)
         
         return jsonify(result)
         

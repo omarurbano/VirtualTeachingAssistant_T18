@@ -21,8 +21,10 @@ const statusText = document.getElementById('statusText');
 
 // State
 let uploadedFiles = [];
+let uploadedImages = [];
 let isUploading = false;
 let isProcessing = false;
+let isUploadingImage = false;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', init);
@@ -31,6 +33,7 @@ async function init() {
     setupEventListeners();
     await checkHealth();
     await loadFiles();
+    await loadImages();
     autoResizeTextarea();
 }
 
@@ -62,6 +65,23 @@ function setupEventListeners() {
     
     // Clear files
     clearFilesBtn.addEventListener('click', clearAllDocuments);
+    
+    // Image upload button
+    document.getElementById('quickImageUpload').addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.png,.jpg,.jpeg,.webp,.gif,.bmp';
+        input.multiple = true;
+        input.onchange = (e) => {
+            if (e.target.files.length > 0) {
+                uploadImages(e.target.files);
+            }
+        };
+        input.click();
+    });
+    
+    // Clear images
+    document.getElementById('clearImagesBtn').addEventListener('click', clearAllImages);
 }
 
 async function checkHealth() {
@@ -151,6 +171,128 @@ function updateFilesBar() {
     });
 }
 
+async function uploadImages(files) {
+    if (isUploadingImage) return;
+    
+    isUploadingImage = true;
+    statusText.textContent = 'analyzing image...';
+    statusDot.classList.add('inactive');
+    
+    let uploadedCount = 0;
+    let failedCount = 0;
+    
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Client-side validation
+        const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/bmp'];
+        if (!validTypes.includes(file.type)) {
+            showToast(`Invalid image format: ${file.name}`);
+            failedCount++;
+            continue;
+        }
+        
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+            showToast(`Image too large: ${file.name} (max 10MB)`);
+            failedCount++;
+            continue;
+        }
+        
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // Show a temporary "processing" indicator for this specific image
+            const tempToast = showToast(`Analyzing ${file.name}... (this may take a few moments)`);
+            
+            const response = await fetch(`${API_BASE}/api/upload/image`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            // Always add to uploadedImages, even if analysis failed
+            // The file is kept on the server and shown in UI
+            uploadedCount++;
+            uploadedImages.push(result);
+            updateImagesBar();
+            
+            if (result.success) {
+                showToast(`Image analyzed: ${file.name}`);
+            } else {
+                // Show detailed error message
+                const errorMsg = result.error || 'Unknown error';
+                let displayError = errorMsg;
+                
+                // Provide more user-friendly messages for common errors
+                if (errorMsg.includes('timeout') || errorMsg.includes('504') || errorMsg.includes('timed out')) {
+                    displayError = 'Image analysis timed out. The image was uploaded but could not be analyzed.';
+                } else if (errorMsg.includes('API key') || errorMsg.includes('authentication')) {
+                    displayError = 'Vision service authentication error.';
+                } else if (errorMsg.includes('not available')) {
+                    displayError = 'Vision model is not available.';
+                }
+                
+                showToast(`Analysis issue: ${displayError}`);
+                console.warn('Image analysis failed:', result.error);
+            }
+        } catch (error) {
+            failedCount++;
+            console.error('Image upload error:', error);
+            showToast(`Upload failed: ${file.name} - ${error.message}`);
+        }
+    }
+    
+    isUploadingImage = false;
+    statusText.textContent = 'ready';
+    statusDot.classList.remove('inactive');
+    
+    if (uploadedCount > 0) {
+        // Toast already shown per image
+    } else if (failedCount > 0 && uploadedCount === 0) {
+        showToast(`All ${failedCount} image(s) failed to analyze`);
+    }
+}
+
+function updateImagesBar() {
+    const imagesBar = document.getElementById('imagesBar');
+    const imagesList = document.getElementById('imagesList');
+    
+    if (uploadedImages.length === 0) {
+        imagesBar.style.display = 'none';
+        return;
+    }
+    
+    imagesBar.style.display = 'flex';
+    imagesList.innerHTML = '';
+    
+    uploadedImages.forEach((img) => {
+        const tag = document.createElement('span');
+        tag.className = 'file-tag image-tag';
+        tag.innerHTML = `<span class="ext">IMG</span> ${img.file_name}`;
+        imagesList.appendChild(tag);
+    });
+}
+
+async function clearAllImages() {
+    try {
+        // Clear from server
+        for (const img of uploadedImages) {
+            await fetch(`${API_BASE}/api/images/${img.file_id}`, {
+                method: 'DELETE'
+            });
+        }
+        
+        uploadedImages = [];
+        updateImagesBar();
+        showToast('images cleared');
+    } catch (error) {
+        console.error('Failed to clear images:', error);
+    }
+}
+
 async function loadFiles() {
     try {
         const response = await fetch(`${API_BASE}/api/files`);
@@ -162,6 +304,29 @@ async function loadFiles() {
         }
     } catch (error) {
         console.error('Failed to load files:', error);
+    }
+}
+
+async function loadImages() {
+    try {
+        const response = await fetch(`${API_BASE}/api/images`);
+        const data = await response.json();
+        
+        if (data.success && data.images && data.images.length > 0) {
+            // Convert API response to the format expected by updateImagesBar
+            uploadedImages = data.images.map(img => ({
+                file_id: img.file_id,
+                file_name: img.file_name,
+                upload_time: img.upload_time,
+                description: img.description,
+                // Since the /api/images endpoint returns a truncated description,
+                // we'll mark these as successfully loaded from server
+                success: true 
+            }));
+            updateImagesBar();
+        }
+    } catch (error) {
+        console.error('Failed to load images:', error);
     }
 }
 
@@ -256,6 +421,56 @@ function addMessage(type, content) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function renderTableCitation(citation, index, scorePercent) {
+    const markdownTable = citation.markdown_table || citation.verbatim;
+    const tableRows = citation.table_rows || 'N/A';
+    const tableCols = citation.table_columns || 'N/A';
+    
+    return `
+        <div class="citation-item table-citation">
+            <div class="citation-header">
+                <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
+                <span class="citation-type-badge table-badge">TABLE</span>
+                <span class="citation-match">${scorePercent}%</span>
+            </div>
+            <div class="citation-loc">${escapeHtml(citation.location)} (${tableRows} rows × ${tableCols} cols)</div>
+            <div class="citation-description">Table content:</div>
+            <div class="table-container">${escapeHtml(markdownTable)}</div>
+        </div>
+    `;
+}
+
+function renderImageCitation(citation, index, scorePercent) {
+    const imageUrl = citation.image_url || '';
+    const caption = citation.image_caption || 'No caption available';
+    const ocrText = citation.ocr_text || '';
+    const hasText = citation.has_text;
+    
+    let imageHtml = '';
+    if (imageUrl) {
+        imageHtml = `<div class="image-preview"><img src="${escapeHtml(imageUrl)}" alt="Image from ${escapeHtml(citation.source_file)}" onerror="this.style.display='none'" /></div>`;
+    }
+    
+    let ocrHtml = '';
+    if (hasText && ocrText) {
+        ocrHtml = `<div class="citation-ocr"><strong>OCR Text:</strong> "${escapeHtml(ocrText.substring(0, 200))}${ocrText.length > 200 ? '...' : ''}"</div>`;
+    }
+    
+    return `
+        <div class="citation-item image-citation">
+            <div class="citation-header">
+                <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
+                <span class="citation-type-badge image-badge">IMAGE</span>
+                <span class="citation-match">${scorePercent}%</span>
+            </div>
+            <div class="citation-loc">${escapeHtml(citation.location)}</div>
+            ${imageHtml}
+            <div class="citation-caption"><strong>Description:</strong> ${escapeHtml(caption)}</div>
+            ${ocrHtml}
+        </div>
+    `;
+}
+
 function addMessageWithCitations(type, content, citations = []) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
@@ -271,17 +486,30 @@ function addMessageWithCitations(type, content, citations = []) {
         
         citations.forEach((citation, index) => {
             const scorePercent = (citation.similarity_score * 100).toFixed(0);
+            const sourceType = citation.source_type || 'text';
             
-            html += `
-                <div class="citation-item">
-                    <div class="citation-header">
-                        <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
-                        <span class="citation-match">${scorePercent}%</span>
+            let citationHtml = '';
+            
+            // Type-specific rendering
+            if (sourceType === 'table') {
+                citationHtml = renderTableCitation(citation, index, scorePercent);
+            } else if (sourceType === 'image') {
+                citationHtml = renderImageCitation(citation, index, scorePercent);
+            } else {
+                // Standard text citation
+                citationHtml = `
+                    <div class="citation-item">
+                        <div class="citation-header">
+                            <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
+                            <span class="citation-match">${scorePercent}%</span>
+                        </div>
+                        <div class="citation-loc">${escapeHtml(citation.location)}</div>
+                        <div class="citation-text">"${escapeHtml(citation.verbatim)}"</div>
                     </div>
-                    <div class="citation-loc">${escapeHtml(citation.location)}</div>
-                    <div class="citation-text">"${escapeHtml(citation.verbatim)}"</div>
-                </div>
-            `;
+                `;
+            }
+            
+            html += citationHtml;
         });
         
         html += '</div>';
