@@ -1,7 +1,7 @@
 # Sprint 2 Report (February 21, 2026 to March 20, 2026)
 
 ## YouTube link of Sprint 2 Video
-*(To be added when video is uploaded - make this video unlisted)*
+https://youtu.be/H5dnFcDzWN4
 
 ## What's New (User Facing)
  * **BLIP-2 Image Captioning**: Automatic generation of natural language descriptions for uploaded images, providing richer context for document understanding
