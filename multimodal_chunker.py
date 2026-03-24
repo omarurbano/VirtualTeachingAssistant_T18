@@ -244,7 +244,8 @@ class MultimodalChunker:
                         'ocr_success': analysis.get('ocr_success', False),
                         'image_width': image.width,
                         'image_height': image.height,
-                        'image_format': 'png'
+                        'image_format': 'png',
+                        'image_path': analysis.get('image_path', '')
                     }
                 )
                 chunks.append(chunk)
@@ -358,7 +359,12 @@ def create_chunks_from_pdf(
         extractor = PyMuPDFExtractor(extract_images=True, extract_tables=True)
 
     if analyzer is None:
-        analyzer = create_image_analyzer()
+        try:
+            analyzer = create_image_analyzer()
+        except Exception as analyzer_error:
+            logger.warning(f"Failed to create image analyzer: {analyzer_error}. Using simple analyzer.")
+            from image_analyzer import SimpleImageAnalyzer
+            analyzer = SimpleImageAnalyzer()
 
     if chunker is None:
         chunker = MultimodalChunker()
@@ -384,18 +390,25 @@ def create_chunks_from_pdf(
         # Batch analyze images
         if all_images:
             logger.info(f"Analyzing {len(all_images)} images...")
-            image_analyses = analyze_images_batch(all_images, analyzer)
+            try:
+                image_analyses = analyze_images_batch(all_images, analyzer)
+            except Exception as batch_error:
+                logger.warning(f"Image batch analysis failed: {batch_error}. Continuing without image analysis.")
+                image_analyses = {}
 
             # Save images to disk
             for page in pages.values():
                 for image in page.images:
-                    filepath = extractor.save_image_to_file(image, output_image_dir)
-                    if filepath:
-                        # Store relative path for serving
-                        image.saved_path = filepath
-                        # Add to analyses
-                        if image.element_id in image_analyses:
-                            image_analyses[image.element_id]['image_path'] = filepath
+                    try:
+                        filepath = extractor.save_image_to_file(image, output_image_dir)
+                        if filepath:
+                            # Store relative path for serving
+                            image.saved_path = filepath
+                            # Add to analyses
+                            if image.element_id in image_analyses:
+                                image_analyses[image.element_id]['image_path'] = filepath
+                    except Exception as save_error:
+                        logger.warning(f"Failed to save image: {save_error}")
 
     # Step 3: Create chunks
     chunks = chunker.create_chunks(pages, file_id, filename, image_analyses)

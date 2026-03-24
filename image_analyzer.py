@@ -13,7 +13,7 @@ Created: 2025-03-10
 
 import io
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 # Check for optional dependencies
 try:
     import torch
-    from transformers import Blip2Processor, Blip2ForConditionalGeneration
-    BLIP2_AVAILABLE = True
+    from transformers import pipeline
+    VISION_AVAILABLE = True
 except ImportError:
-    BLIP2_AVAILABLE = False
-    logger.warning("BLIP-2 not available. Install: pip install transformers torch")
+    VISION_AVAILABLE = False
+    logger.warning("Transformers not available. Install: pip install transformers torch")
 
 try:
     import pytesseract
@@ -67,21 +67,34 @@ class ImageAnalyzer:
             'name': 'Salesforce/blip2-flan-t5-xxl',
             'size_gb': 15.0,
             'description': 'Largest BLIP-2 with Flan-T5-XXL (highest quality)'
+        },
+        'git-base': {
+            'name': 'microsoft/git-base',
+            'size_gb': 1.5,
+            'description': 'Microsoft GIT-base (alternative to BLIP-2)'
+        },
+        'git-small': {
+            'name': 'microsoft/git-small',
+            'size_gb': 0.5,
+            'description': 'Microsoft GIT-small (faster, less accurate)'
         }
     }
 
-    def __init__(self, model_name: str = 'blip2-flan-t5-xl', device: str = None):
+    def __init__(self, model_name: str = 'git-base', device: str = None, timeout: int = 30):
         """
         Initialize image analyzer.
 
         Args:
-            model_name: BLIP-2 model variant (key from BLIP2_MODELS)
+            model_name: Model variant (key from BLIP2_MODELS)
             device: 'cuda', 'cpu', or None for auto-detect
+            timeout: Timeout for caption generation in seconds
         """
         self.model_name = model_name
         self.device = device or self._detect_device()
+        self.timeout = timeout
         self.blip_processor = None
         self.blip_model = None
+        self.load_error = None
 
         self._load_blip2()
 
@@ -95,36 +108,35 @@ class ImageAnalyzer:
             return 'cpu'
 
     def _load_blip2(self):
-        """Load BLIP-2 model and processor."""
-        if not BLIP2_AVAILABLE:
-            logger.warning("BLIP-2 dependencies not installed")
+        """Load vision model (BLIP-2 or Microsoft GIT) and processor."""
+        if not VISION_AVAILABLE:
+            logger.warning("Transformers not available")
+            self.load_error = "Transformers not installed"
             return
 
         model_key = self.model_name
         if model_key not in self.BLIP2_MODELS:
-            logger.warning(f"Unknown model: {model_key}. Using default: blip2-flan-t5-xl")
-            model_key = 'blip2-flan-t5-xl'
+            logger.warning(f"Unknown model: {model_key}. Using default: git-base")
+            model_key = 'git-base'
 
         model_path = self.BLIP2_MODELS[model_key]['name']
-        logger.info(f"Loading BLIP-2: {model_path} on {self.device}")
+        logger.info(f"Loading vision model: {model_path} on {self.device}")
 
         try:
-            # Load processor
-            self.blip_processor = Blip2Processor.from_pretrained(model_path)
-
-            # Load model with appropriate dtype
-            torch_dtype = torch.float16 if self.device == 'cuda' else torch.float32
-            self.blip_model = Blip2ForConditionalGeneration.from_pretrained(
-                model_path,
-                torch_dtype=torch_dtype
-            ).to(self.device)
-
-            logger.info(f"BLIP-2 loaded successfully on {self.device}")
+            # Use pipeline for image-to-text
+            from transformers import pipeline
+            
+            self.caption_pipeline = pipeline(
+                'image-text-to-text',
+                model=model_path,
+                device='cpu'
+            )
+            logger.info(f"Vision model loaded successfully on {self.device}")
 
         except Exception as e:
-            logger.error(f"Failed to load BLIP-2: {e}")
-            self.blip_model = None
-            self.blip_processor = None
+            logger.error(f"Failed to load vision model: {e}")
+            self.caption_pipeline = None
+            self.load_error = str(e)
 
     def generate_caption(self, image_bytes: bytes, prompt: str = None) -> str:
         """
@@ -132,32 +144,32 @@ class ImageAnalyzer:
 
         Args:
             image_bytes: PNG/JPEG image data
-            prompt: Optional prompt to guide captioning (e.g., "Describe this image in detail")
+            prompt: Optional prompt to guide captioning
 
         Returns:
             Caption string (empty if failed)
         """
-        if not self.blip_model or not self.blip_processor:
+        if not self.caption_pipeline:
             return ""
 
         try:
             # Load image
             image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
 
-            # Prepare inputs
-            if prompt:
-                inputs = self.blip_processor(image, text=prompt, return_tensors="pt").to(self.device)
-            else:
-                inputs = self.blip_processor(image, return_tensors="pt").to(self.device)
+            # Default prompt if not provided
+            text_prompt = prompt if prompt else "a photo showing"
 
-            # Generate caption
-            with torch.no_grad():
-                generated_ids = self.blip_model.generate(**inputs, max_new_tokens=100)
-                caption = self.blip_processor.batch_decode(
-                    generated_ids, skip_special_tokens=True
-                )[0]
-
-            return caption.strip()
+            # Generate caption using pipeline
+            result = self.caption_pipeline(image, text=text_prompt, max_length=100)
+            
+            if result and len(result) > 0:
+                # Extract generated text from result
+                generated = result[0].get('generated_text', '')
+                # Remove the prompt prefix if present
+                if generated.startswith(text_prompt):
+                    generated = generated[len(text_prompt):].strip()
+                return generated
+            return ""
 
         except Exception as e:
             logger.warning(f"Caption generation failed: {e}")
@@ -219,7 +231,7 @@ class ImageAnalyzer:
         }
 
         # Generate caption
-        if self.blip_model:
+        if self.caption_pipeline:
             caption = self.generate_caption(image_bytes, caption_prompt)
             result['caption'] = caption
             result['caption_success'] = len(caption) > 0
@@ -281,23 +293,40 @@ class SimpleImageAnalyzer:
 # FACTORY FUNCTION
 # ============================================================================
 
-def create_image_analyzer(model_name: str = None, device: str = None) -> ImageAnalyzer:
+def create_image_analyzer(model_name: str = None, device: str = None, timeout: int = 30) -> Any:
     """
     Factory function to create appropriate image analyzer.
-
+    
     Args:
-        model_name: BLIP-2 model variant (None for auto-select)
+        model_name: Vision model variant (None uses default: git-base)
         device: Device to use (None for auto-detect)
+        timeout: Timeout for inference in seconds
 
     Returns:
         ImageAnalyzer or SimpleImageAnalyzer instance
     """
-    if BLIP2_AVAILABLE:
-        model = model_name or 'blip2-flan-t5-xl'
-        return ImageAnalyzer(model_name=model, device=device)
-    else:
-        logger.info("Using SimpleImageAnalyzer (OCR only)")
-        return SimpleImageAnalyzer()
+    import os
+    
+    # Check environment flags
+    skip_vision = os.environ.get('SKIP_BLIP2', '').lower() == 'true'
+    
+    # Try vision model first if not skipped
+    if VISION_AVAILABLE and not skip_vision:
+        model = model_name or 'git-base'
+        try:
+            logger.info(f"Attempting to load vision model: {model}")
+            analyzer = ImageAnalyzer(model_name=model, device=device, timeout=timeout)
+            if analyzer.caption_pipeline is not None:
+                logger.info(f"Vision model {model} loaded successfully!")
+                return analyzer
+            else:
+                logger.warning(f"Vision model {model} loaded but pipeline is None, falling back to OCR")
+        except Exception as e:
+            logger.warning(f"Failed to load vision model {model}: {e}, falling back to OCR")
+    
+    # Default to SimpleImageAnalyzer (OCR only)
+    logger.info("Using SimpleImageAnalyzer (OCR only)")
+    return SimpleImageAnalyzer()
 
 
 # ============================================================================

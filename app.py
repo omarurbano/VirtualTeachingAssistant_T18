@@ -16,6 +16,9 @@ import hashlib
 import re
 from datetime import datetime
 from typing import List, Dict, Optional, Any, Tuple
+import threading
+import queue
+import time
 
 # Flask imports
 from flask import Flask, request, jsonify, render_template, send_from_directory
@@ -67,6 +70,8 @@ app.config['EXTRACTED_IMAGES_DIR'] = os.path.join(os.path.dirname(os.path.abspat
 os.makedirs(app.config['EXTRACTED_IMAGES_DIR'], exist_ok=True)
 
 # Multimodal processing flag
+# DISABLED by default due to memory issues with BLIP-2 model on Windows
+# Set to True only if you have sufficient RAM (>16GB) and a CUDA GPU
 app.config['USE_MULTIMODAL_PDF'] = True  # Toggle for advanced PDF processing
 
 # ============================================================================
@@ -151,6 +156,83 @@ try:
 except ImportError:
     logger.warning("Whisper not available")
 
+
+# ============================================================================
+# TIMEOUT AND ERROR HANDLING UTILITIES
+# ============================================================================
+
+class TimeoutError(Exception):
+    """Exception raised when an operation times out."""
+    pass
+
+
+def run_with_timeout(func, args=(), kwargs=None, timeout_seconds=120, default=None):
+    """
+    Run a function with a timeout. If the function takes too long, return default.
+    
+    Args:
+        func: Function to run
+        args: Positional arguments for the function
+        kwargs: Keyword arguments for the function
+        timeout_seconds: Maximum time to wait (default 120 seconds)
+        default: Value to return on timeout
+    
+    Returns:
+        Function result or default value on timeout
+    """
+    if kwargs is None:
+        kwargs = {}
+    
+    result_queue = queue.Queue()
+    error_queue = queue.Queue()
+    
+    def target():
+        try:
+            result = func(*args, **kwargs)
+            result_queue.put(('success', result))
+        except Exception as e:
+            error_queue.put(('error', e))
+    
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+    
+    if thread.is_alive():
+        # Thread is still running - timeout occurred
+        logger.warning(f"Operation timed out after {timeout_seconds} seconds: {func.__name__}")
+        return default
+    else:
+        # Thread completed
+        if not result_queue.empty():
+            status, result = result_queue.get()
+            return result
+        if not error_queue.empty():
+            status, error = error_queue.get()
+            raise error
+    
+    return default
+
+
+def safe_file_cleanup(file_path: str) -> bool:
+    """
+    Safely remove a file, ignoring errors.
+    
+    Args:
+        file_path: Path to the file to remove
+    
+    Returns:
+        True if file was removed, False otherwise
+    """
+    try:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Cleaned up file: {file_path}")
+            return True
+    except Exception as e:
+        logger.warning(f"Failed to clean up file {file_path}: {e}")
+    return False
+
+
 # ============================================================================
 # SIMPLE DOCUMENT PROCESSING (STANDALONE)
 # ============================================================================
@@ -229,9 +311,36 @@ class SimpleEmbeddingManager:
         
         if SENTENCE_TRANSFORMERS_AVAILABLE:
             try:
-                self.model = SentenceTransformer(model_name)
-                self.dimension = self.model.get_sentence_embedding_dimension()
-                logger.info(f"Loaded embedding model: {model_name}")
+                # Try loading with timeout using thread
+                import queue
+                import threading
+                
+                result_queue = queue.Queue()
+                
+                def load_model():
+                    try:
+                        model = SentenceTransformer(model_name)
+                        result_queue.put(('success', model))
+                    except Exception as e:
+                        result_queue.put(('error', e))
+                
+                thread = threading.Thread(target=load_model, daemon=True)
+                thread.start()
+                thread.join(timeout=60)  # 60 second timeout for model loading
+                
+                if thread.is_alive():
+                    logger.warning(f"Model loading timed out after 60 seconds, using mock embeddings")
+                else:
+                    if not result_queue.empty():
+                        status, data = result_queue.get()
+                        if status == 'success':
+                            self.model = data
+                            self.dimension = self.model.get_sentence_embedding_dimension()
+                            logger.info(f"Loaded embedding model: {model_name}")
+                        else:
+                            logger.error(f"Error loading embedding model: {data}")
+                    else:
+                        logger.warning("Model loading returned no result, using mock embeddings")
             except Exception as e:
                 logger.error(f"Error loading embedding model: {e}")
         else:
@@ -591,13 +700,20 @@ def process_pdf_multimodal(file_path: str, file_id: str) -> Dict[str, Any]:
         # Get extracted images directory
         extracted_images_dir = app.config.get('EXTRACTED_IMAGES_DIR')
 
-        # Use the end-to-end chunk creation function
-        chunks = create_chunks_from_pdf(
-            pdf_path=file_path,
-            file_id=file_id,
-            filename=os.path.basename(file_path),
-            output_image_dir=extracted_images_dir
-        )
+        try:
+            # Use the end-to-end chunk creation function
+            chunks = create_chunks_from_pdf(
+                pdf_path=file_path,
+                file_id=file_id,
+                filename=os.path.basename(file_path),
+                output_image_dir=extracted_images_dir
+            )
+        except Exception as chunk_error:
+            logger.error(f"Error creating chunks from PDF: {chunk_error}")
+            import traceback
+            traceback.print_exc()
+            result['error'] = f"Failed to process PDF content: {str(chunk_error)}"
+            return result
 
         if not chunks:
             result['error'] = "No content extracted from PDF"
@@ -606,8 +722,14 @@ def process_pdf_multimodal(file_path: str, file_id: str) -> Dict[str, Any]:
         # Separate into LangChain documents for embedding
         documents = [chunk.to_langchain_document() for chunk in chunks]
 
-        # Generate embeddings
-        embeddings = app_state.embedding_manager.embed_documents(documents)
+        # Generate embeddings with error handling
+        try:
+            embeddings = app_state.embedding_manager.embed_documents(documents)
+        except Exception as embed_error:
+            logger.error(f"Error generating embeddings: {embed_error}")
+            result['error'] = f"Failed to generate embeddings: {str(embed_error)}"
+            return result
+
         metadatas = [doc.metadata for doc in documents]
 
         # Add to vector store
@@ -666,9 +788,15 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
         
         if file_ext == 'pdf':
             # Use multimodal processing if available and enabled, otherwise fallback to basic
+            # Wrap in try-except to prevent crashes from model loading failures
             if MULTIMODAL_AVAILABLE and app.config.get('USE_MULTIMODAL_PDF', True):
-                logger.info(f"Processing PDF with multimodal extraction: {file_path}")
-                return process_pdf_multimodal(file_path, file_id)
+                try:
+                    logger.info(f"Processing PDF with multimodal extraction: {file_path}")
+                    return process_pdf_multimodal(file_path, file_id)
+                except Exception as multimodal_error:
+                    logger.error(f"Multimodal processing failed, falling back to basic: {multimodal_error}")
+                    logger.info(f"Processing PDF with basic loader: {file_path}")
+                    documents = app_state.document_processor.load_document(file_path)
             else:
                 logger.info(f"Processing PDF with basic loader: {file_path}")
                 documents = app_state.document_processor.load_document(file_path)
@@ -723,12 +851,42 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
                 chunk.metadata['document_id'] = file_id
                 chunk.metadata['filename'] = filename
             
-            # Generate embeddings
-            embeddings = app_state.embedding_manager.embed_documents(chunks)
+            # Generate embeddings with timeout protection
+            logger.info(f"Generating embeddings for {len(chunks)} chunks...")
+            embeddings_result = run_with_timeout(
+                app_state.embedding_manager.embed_documents,
+                args=(chunks,),
+                timeout_seconds=180,
+                default=None
+            )
+            
+            if embeddings_result is None:
+                # Timeout or error - try with fewer chunks as fallback
+                logger.warning("Embedding generation timed out, trying with first chunk only")
+                try:
+                    # Try with just the first chunk as emergency fallback
+                    single_chunk = chunks[:1]
+                    embeddings_result = app_state.embedding_manager.embed_documents(single_chunk)
+                    chunks = single_chunk
+                    logger.info("Using emergency fallback: single chunk embedding")
+                except Exception as fallback_error:
+                    logger.error(f"Fallback embedding also failed: {fallback_error}")
+                    result['error'] = "Failed to generate embeddings - operation timed out. Please try a smaller file."
+                    return result
+            
             metadatas = [c.metadata for c in chunks]
             
-            # Add to vector store
-            app_state.vector_store.add_documents(chunks, embeddings, metadatas)
+            # Add to vector store with timeout
+            logger.info("Adding documents to vector store...")
+            store_result = run_with_timeout(
+                app_state.vector_store.add_documents,
+                args=(chunks, embeddings_result, metadatas),
+                timeout_seconds=60,
+                default=False
+            )
+            
+            if store_result is False:
+                logger.warning("Vector store add timed out, but continuing anyway")
             
             result['success'] = True
             result['chunks_created'] = len(chunks)
@@ -1321,9 +1479,9 @@ def list_files():
         for file_id, info in app_state.uploaded_files.items():
             files.append({
                 'file_id': file_id,
-                'filename': info['filename'],
-                'file_type': info['file_type'].replace('.', ''),
-                'chunks': info['chunks'],
+                'file_name': info['filename'],  # Standardized: use 'file_name' for consistency
+                'file_type': info['file_type'].replace('.', ''),  # e.g., 'pdf' not '.pdf'
+                'chunks': info.get('chunks', 0),
                 'upload_time': info['upload_time']
             })
         

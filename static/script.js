@@ -118,6 +118,7 @@ async function uploadFiles(files) {
     statusDot.classList.add('inactive');
     
     let uploadedCount = 0;
+    let failedCount = 0;
     
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -126,6 +127,8 @@ async function uploadFiles(files) {
             const formData = new FormData();
             formData.append('file', file);
             
+            console.log(`Uploading: ${file.name}`);
+            
             const response = await fetch(`${API_BASE}/api/upload`, {
                 method: 'POST',
                 body: formData
@@ -133,15 +136,28 @@ async function uploadFiles(files) {
             
             const result = await response.json();
             
+            console.log('Upload response:', result);
+            
             if (result.success) {
                 uploadedCount++;
-                uploadedFiles.push(result);
+                // Normalize the response to ensure consistent field names
+                const normalizedFile = {
+                    file_id: result.file_id,
+                    file_name: result.file_name || result.filename || file.name,
+                    file_type: (result.file_type || '?').replace('.', ''),
+                    chunks: result.chunks_created || 0
+                };
+                uploadedFiles.push(normalizedFile);
                 updateFilesBar();
             } else {
+                failedCount++;
                 console.error('Upload failed:', result.error);
+                showToast(`Upload failed: ${result.error || 'Unknown error'}`);
             }
         } catch (error) {
+            failedCount++;
             console.error('Upload error:', error);
+            showToast(`Upload error: ${error.message}`);
         }
     }
     
@@ -151,6 +167,9 @@ async function uploadFiles(files) {
     
     if (uploadedCount > 0) {
         showToast(`${uploadedCount} file(s) loaded`);
+    }
+    if (failedCount > 0 && uploadedCount === 0) {
+        showToast(`All ${failedCount} file(s) failed to upload`);
     }
 }
 
@@ -166,7 +185,10 @@ function updateFilesBar() {
     uploadedFiles.forEach((file) => {
         const tag = document.createElement('span');
         tag.className = 'file-tag';
-        tag.innerHTML = `<span class="ext">${file.file_type}</span> ${file.file_name}`;
+        // Handle both response formats: file_name (from upload) or filename (from /api/files)
+        const fileName = file.file_name || file.filename || 'unknown';
+        const fileType = file.file_type || '?';
+        tag.innerHTML = `<span class="ext">${fileType}</span> ${fileName}`;
         filesList.appendChild(tag);
     });
 }
@@ -298,8 +320,14 @@ async function loadFiles() {
         const response = await fetch(`${API_BASE}/api/files`);
         const data = await response.json();
         
-        if (data.success && data.files.length > 0) {
-            uploadedFiles = data.files;
+        if (data.success && data.files && data.files.length > 0) {
+            // Normalize files to have consistent field names
+            uploadedFiles = data.files.map(file => ({
+                file_id: file.file_id,
+                file_name: file.file_name || file.filename,
+                file_type: file.file_type,
+                chunks: file.chunks || 0
+            }));
             updateFilesBar();
         }
     } catch (error) {
