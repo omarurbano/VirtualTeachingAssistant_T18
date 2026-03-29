@@ -25,6 +25,11 @@ pymupdf>=1.23.0
 # Embeddings (Must Have)
 sentence-transformers>=2.2.0
 
+# Optional: Google Gemini Embedding 2 (Multimodal, Free Tier Available!)
+# Install with: pip install google-generativeai
+# Get free API key: https://aistudio.google.com/app/apikey
+# google-generativeai>=0.8.0
+
 # Optional: Audio Transcription
 # openai-whisper>=20231117
 

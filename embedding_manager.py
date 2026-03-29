@@ -54,12 +54,29 @@ except ImportError:
     OPENAI_AVAILABLE = False
     logging.warning("OpenAI not available. Install with: pip install langchain-openai")
 
+# Try to import Google Generative AI for Gemini embeddings
+try:
+    import google.generativeai as genai
+    GOOGLE_GENAI_AVAILABLE = True
+except ImportError:
+    GOOGLE_GENAI_AVAILABLE = False
+    logging.warning("Google Generative AI not available. Install with: pip install google-generativeai")
+
 # Try to import LangChain embeddings base class
 try:
     from langchain.embeddings.base import Embeddings
 except ImportError:
-    # Fallback for older LangChain versions
-    from langchain.embeddings import Embeddings
+    try:
+        # Fallback for older LangChain versions
+        from langchain.embeddings import Embeddings
+    except ImportError:
+        # Define a simple fallback base class
+        class Embeddings:
+            """Fallback base class for embeddings when LangChain is not available."""
+            def embed_documents(self, texts):
+                raise NotImplementedError
+            def embed_query(self, text):
+                raise NotImplementedError
 
 # ============================================================================
 # CONFIGURATION AND CONSTANTS
@@ -101,6 +118,26 @@ OPENAI_EMBEDDING_MODELS = {
         'dimensions': 1536,
         'description': 'Legacy OpenAI model'
     }
+}
+
+# Gemini Embedding models (cloud-based, multimodal)
+# Free tier available: 10M tokens/minute
+GEMINI_EMBEDDING_MODELS = {
+    'models/gemini-embedding-2-preview': {
+        'dimensions': 3072,  # Default, scalable down via MRL
+        'description': 'Gemini Embedding 2 - Natively multimodal (text, images, audio, video, PDFs)',
+        'max_tokens': 8192,
+        'supports_multimodal': True,
+        'task_types': ['retrieval_query', 'retrieval_document', 'semantic_similarity', 
+                       'classification', 'clustering', 'code_retrieval']
+    }
+}
+
+# Recommended dimensions for Gemini (Matryoshka Representation Learning)
+GEMINI_DIMENSIONS = {
+    'high_quality': 3072,
+    'balanced': 768,  # Recommended by Google for quality/storage balance
+    'fast': 384
 }
 
 # Default configuration
@@ -475,6 +512,178 @@ class OpenAIEmbeddingsWrapper:
         return self.dimensions
 
 
+class GeminiEmbeddingsWrapper:
+    """
+    Wrapper class for Google Gemini Embedding 2 API.
+    
+    This class provides access to Gemini Embedding 2, Google's natively
+    multimodal embedding model that supports text, images, audio, video,
+    and PDFs in a single unified embedding space.
+    
+    Attributes:
+        model_name: Name of the Gemini embedding model
+        dimensions: Number of embedding dimensions
+    """
+    
+    def __init__(
+        self,
+        model_name: str = 'models/gemini-embedding-2-preview',
+        api_key: str = None,
+        task_type: str = 'retrieval_document',
+        output_dimensions: int = 768  # Recommended balance of quality/storage
+    ):
+        """
+        Initialize Gemini embeddings.
+        
+        Args:
+            model_name: Name of the Gemini model (from GEMINI_EMBEDDING_MODELS)
+            api_key: Google API key. Falls back to GOOGLE_API_KEY env var
+            task_type: Task optimization type
+            output_dimensions: Output dimension (384, 768, 1536, or 3072)
+            
+        Raises:
+            ImportError: If google-generativeai is not installed
+            ValueError: If API key is not provided
+        """
+        # Check if Google GenAI is available
+        if not GOOGLE_GENAI_AVAILABLE:
+            raise ImportError(
+                "google-generativeai is not installed. "
+                "Install with: pip install google-generativeai"
+            )
+        
+        # Get API key from parameter or environment
+        if api_key is None:
+            api_key = os.environ.get('GOOGLE_API_KEY')
+        
+        if api_key is None:
+            raise ValueError(
+                "Google API key is required. "
+                "Provide it as a parameter or set GOOGLE_API_KEY environment variable. "
+                "Get your free API key at: https://aistudio.google.com/app/apikey"
+            )
+        
+        # Configure the API
+        genai.configure(api_key=api_key)
+        
+        # Validate dimensions
+        valid_dimensions = [384, 768, 1536, 3072]
+        if output_dimensions not in valid_dimensions:
+            logger.warning(f"Invalid dimensions {output_dimensions}, using 768")
+            output_dimensions = 768
+        
+        self.model_name = model_name
+        self.task_type = task_type
+        self.dimensions = output_dimensions
+        self.api_key = api_key
+        
+        # Embedding cache
+        self._cache = {}
+        
+        logger.info(f"Initialized Gemini embeddings: {model_name} ({output_dimensions}D)")
+    
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """
+        Generate embeddings for a list of documents using Gemini API.
+        
+        Args:
+            texts: List of text strings to embed (or Document objects with page_content)
+            
+        Returns:
+            List of embedding vectors
+        """
+        if not texts:
+            return []
+        
+        # Extract text content from documents if needed
+        processed_texts = []
+        for text in texts:
+            if hasattr(text, 'page_content'):
+                # It's a LangChain Document object
+                processed_texts.append(text.page_content)
+            else:
+                processed_texts.append(str(text))
+        
+        # Check cache
+        results = []
+        uncached = []
+        uncached_indices = []
+        
+        for i, text in enumerate(processed_texts):
+            cache_key = str(hash(text))
+            if cache_key in self._cache:
+                results.append((i, self._cache[cache_key]))
+            else:
+                uncached.append(text)
+                uncached_indices.append(i)
+        
+        # Generate uncached embeddings
+        if uncached:
+            try:
+                response = genai.embed_content(
+                    model=self.model_name,
+                    content=uncached,
+                    task_type=self.task_type,
+                    output_dimensionality=self.dimensions
+                )
+                
+                embeddings = response['embedding']
+                
+                for idx, emb in zip(uncached_indices, embeddings):
+                    # Use processed_texts for cache key
+                    cache_key = str(hash(processed_texts[idx]))
+                    self._cache[cache_key] = emb
+                    results.append((idx, emb))
+                    
+            except Exception as e:
+                logger.error(f"Error generating Gemini document embeddings: {str(e)}")
+                raise
+        
+        # Sort by original index
+        results.sort(key=lambda x: x[0])
+        return [emb for _, emb in results]
+    
+    def embed_query(self, text: str) -> List[float]:
+        """
+        Generate embedding for a single query text using Gemini API.
+        
+        Args:
+            text: Query text to embed
+            
+        Returns:
+            Embedding vector
+        """
+        try:
+            response = genai.embed_content(
+                model=self.model_name,
+                content=text,
+                task_type='retrieval_query',  # Different task type for queries
+                output_dimensionality=self.dimensions
+            )
+            # Handle both single string and list responses
+            embedding = response['embedding']
+            if isinstance(embedding[0], list):
+                return embedding[0]
+            else:
+                return embedding
+        except Exception as e:
+            logger.error(f"Error generating Gemini query embedding: {str(e)}")
+            raise
+    
+    def get_embedding_dimension(self) -> int:
+        """
+        Get the dimensionality of embeddings produced by this model.
+        
+        Returns:
+            Number of dimensions in each embedding vector
+        """
+        return self.dimensions
+    
+    def clear_cache(self):
+        """Clear the embedding cache."""
+        self._cache.clear()
+
+
 # ============================================================================
 # MAIN EMBEDDING MANAGER CLASS
 # ============================================================================
@@ -519,13 +728,16 @@ class EmbeddingManager:
         elif self.provider == 'openai':
             self._init_openai(model_name or 'text-embedding-3-small', **kwargs)
             
+        elif self.provider == 'gemini':
+            self._init_gemini(model_name or 'models/gemini-embedding-2-preview', **kwargs)
+            
         elif self.provider == 'mock':
             self._init_mock(model_name or 384)
             
         else:
             raise ValueError(
                 f"Unknown provider: {provider}. "
-                f"Supported providers: sentence-transformers, openai, mock"
+                f"Supported providers: sentence-transformers, openai, gemini, mock"
             )
         
         logger.info(f"EmbeddingManager initialized with provider: {self.provider}")
@@ -566,6 +778,35 @@ class EmbeddingManager:
             logger.warning(f"OpenAI not available: {e}")
             logger.info("Falling back to mock embeddings")
             self._init_mock()
+    
+    def _init_gemini(self, model_name: str, **kwargs):
+        """
+        Initialize Gemini embeddings.
+        
+        Args:
+            model_name: Name of the Gemini model
+            **kwargs: Additional arguments for GeminiEmbeddingsWrapper
+        """
+        try:
+            # Extract kwargs for Gemini
+            task_type = kwargs.get('task_type', 'retrieval_document')
+            output_dimensions = kwargs.get('output_dimensions', 768)
+            api_key = kwargs.get('api_key')
+            
+            # Create the Gemini wrapper
+            self.model = GeminiEmbeddingsWrapper(
+                model_name=model_name,
+                api_key=api_key,
+                task_type=task_type,
+                output_dimensions=output_dimensions
+            )
+            self.dimensions = self.model.get_embedding_dimension()
+            logger.info(f"Initialized Gemini embeddings: {model_name} ({self.dimensions}D)")
+            
+        except (ImportError, ValueError) as e:
+            logger.warning(f"Gemini not available: {e}")
+            logger.info("Falling back to sentence-transformers")
+            self._init_sentence_transformer()
     
     def _init_mock(self, dimensions: int = 384):
         """

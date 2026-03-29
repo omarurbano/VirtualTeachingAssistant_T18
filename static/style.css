@@ -369,6 +369,19 @@ body {
     color: var(--bg-deep);
 }
 
+.audio-badge {
+    background: #ff6b9d;
+    color: var(--bg-deep);
+}
+
+/* Audio citation specific styles */
+.audio-citation .citation-audio-meta {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+    font-style: italic;
+}
+
 /* Table citation specific styles */
 .table-citation .table-container {
     background: var(--bg-deep);

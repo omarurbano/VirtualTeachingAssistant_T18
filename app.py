@@ -20,6 +20,9 @@ import threading
 import queue
 import time
 
+# Fix for Python 3.14 + google.protobuf compatibility
+os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+
 # Flask imports
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
@@ -32,6 +35,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    logger.info("Loaded environment variables from .env")
+except ImportError:
+    logger.warning("python-dotenv not available, using system environment variables")
+
+# ============================================================================
+# UNIFIED DOCUMENT PROCESSOR (Gemini-powered)
+# ============================================================================
+
+UNIFIED_PROCESSOR_AVAILABLE = False
+unified_processor = None
+
+try:
+    from unified_document_processor import UnifiedDocumentProcessor, create_processor
+    UNIFIED_PROCESSOR_AVAILABLE = True
+    logger.info("Unified document processor (Gemini-powered) available")
+except ImportError as e:
+    logger.warning(f"Unified document processor not available: {e}")
+
 # ============================================================================
 # FLASK APPLICATION SETUP
 # ============================================================================
@@ -43,19 +68,25 @@ CORS(app)
 
 # Configuration
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
-# Document extensions
-DOCUMENT_EXTENSIONS = {'pdf', 'docx', 'txt', 'mp3', 'wav', 'ogg', 'm4a', 'flac'}
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size (increased for audio/video)
+
+# All audio extensions (comprehensive list)
+AUDIO_EXTENSIONS = {'mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'aiff', 'opus', 'webm', 'amr', '3gp', 'midi', 'mid', 'ra', 'ram', 'mp2', 'ac3'}
+
+# Document extensions (text-based documents)
+DOCUMENT_EXTENSIONS = {'pdf', 'docx', 'txt', 'doc', 'rtf', 'odt', 'csv', 'xlsx', 'xls', 'pptx', 'ppt'}
 
 # Image extensions for vision model
-IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'tif'}
+IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'tif', 'svg', 'ico', 'heic', 'heif', 'avif', 'jfif', 'pjpeg', 'pjp'}
 
-# Combined extensions
-app.config['ALLOWED_EXTENSIONS'] = DOCUMENT_EXTENSIONS | IMAGE_EXTENSIONS
+# Combined extensions (all uploadable file types)
+app.config['ALLOWED_EXTENSIONS'] = DOCUMENT_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS
 
-# Separate config for image-specific limits
+# Separate configs for type-specific limits
 app.config['MAX_IMAGE_SIZE'] = 10 * 1024 * 1024  # 10MB for images
+app.config['MAX_AUDIO_SIZE'] = 100 * 1024 * 1024  # 100MB for audio
 app.config['ALLOWED_IMAGE_EXTENSIONS'] = IMAGE_EXTENSIONS
+app.config['ALLOWED_AUDIO_EXTENSIONS'] = AUDIO_EXTENSIONS
 
 app.config['CHUNK_SIZE'] = 1000
 app.config['CHUNK_OVERLAP'] = 200
@@ -70,8 +101,7 @@ app.config['EXTRACTED_IMAGES_DIR'] = os.path.join(os.path.dirname(os.path.abspat
 os.makedirs(app.config['EXTRACTED_IMAGES_DIR'], exist_ok=True)
 
 # Multimodal processing flag
-# DISABLED by default due to memory issues with BLIP-2 model on Windows
-# Set to True only if you have sufficient RAM (>16GB) and a CUDA GPU
+# Set to True to extract images and tables from PDFs
 app.config['USE_MULTIMODAL_PDF'] = True  # Toggle for advanced PDF processing
 
 # ============================================================================
@@ -107,9 +137,27 @@ except ImportError as e:
 # Whisper for audio transcription
 try:
     import whisper
+    # Ensure ffmpeg is in PATH for whisper
+    try:
+        import shutil
+        from imageio_ffmpeg import get_ffmpeg_exe
+        ffmpeg_exe = get_ffmpeg_exe()
+        ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+        
+        # Create a copy named ffmpeg.exe so whisper can find it
+        ffmpeg_standard = os.path.join(ffmpeg_dir, 'ffmpeg.exe')
+        if not os.path.exists(ffmpeg_standard):
+            shutil.copy2(ffmpeg_exe, ffmpeg_standard)
+        
+        if ffmpeg_dir not in os.environ.get('PATH', ''):
+            os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+    except Exception as e:
+        logger.warning(f"ffmpeg setup issue: {e}")
+    
     WHISPER_AVAILABLE = True
     logger.info("whisper loaded successfully")
 except ImportError as e:
+    WHISPER_AVAILABLE = False
     logger.warning(f"whisper not available: {e}")
 
 # Vision model imports - Nemotron for image description
@@ -130,13 +178,10 @@ try:
 except ImportError:
     logger.warning("sentence-transformers not available")
 
-try:
-    from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    LANGCHAIN_AVAILABLE = True
-    logger.info("LangChain available")
-except ImportError as e:
-    logger.warning(f"LangChain not available: {e}")
+# Use standalone implementations only (disable langchain)
+LANGCHAIN_AVAILABLE = False
+TEXT_SPLITTER_AVAILABLE = False
+logger.info("Using standalone document processing (langchain disabled for compatibility)")
 
 # Multimodal PDF processing imports
 try:
@@ -148,6 +193,16 @@ try:
 except ImportError as e:
     MULTIMODAL_AVAILABLE = False
     logger.warning(f"Multimodal processing not available: {e}")
+
+# Multimodal relevance scoring import
+RELEVANCE_SCORER_AVAILABLE = False
+try:
+    from multimodal_relevance_scorer import MultimodalRelevanceScorer, create_relevance_scorer
+    RELEVANCE_SCORER_AVAILABLE = True
+    logger.info("Multimodal relevance scorer available")
+except ImportError as e:
+    RELEVANCE_SCORER_AVAILABLE = False
+    logger.warning(f"Multimodal relevance scorer not available: {e}")
 
 try:
     import whisper
@@ -243,39 +298,79 @@ class SimpleDocumentProcessor:
     def __init__(self, chunk_size=1000, chunk_overlap=200):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            separators=["\n\n", "\n", ". ", " ", ""],
-            length_function=len
-        )
+        # Don't initialize langchain text splitter - use simple chunking instead
+        self.text_splitter = None
         
     def load_pdf(self, file_path: str) -> List[Any]:
-        """Load PDF using PyPDFLoader."""
+        """Load PDF using pypdf directly (no langchain)."""
         try:
-            from langchain_community.document_loaders import PyPDFLoader
-            loader = PyPDFLoader(file_path)
-            return loader.load()
+            from pypdf import PdfReader
+            
+            class TextDoc:
+                def __init__(self, content, meta):
+                    self.page_content = content
+                    self.metadata = meta
+            
+            logger.info(f"Loading PDF: {file_path}")
+            reader = PdfReader(file_path)
+            docs = []
+            
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text and text.strip():
+                    docs.append(TextDoc(
+                        content=text,
+                        meta={'source': file_path, 'page_number': i + 1}
+                    ))
+            
+            logger.info(f"Loaded {len(docs)} pages from PDF using pypdf")
+            return docs
+            
         except Exception as e:
             logger.error(f"Error loading PDF: {e}")
             return []
     
     def load_docx(self, file_path: str) -> List[Any]:
-        """Load Word document."""
+        """Load Word document using python-docx."""
         try:
-            from langchain_community.document_loaders import Docx2txtLoader
-            loader = Docx2txtLoader(file_path)
-            return loader.load()
+            from docx import Document
+            
+            class TextDoc:
+                def __init__(self, content, meta):
+                    self.page_content = content
+                    self.metadata = meta
+            
+            logger.info(f"Loading DOCX: {file_path}")
+            doc = Document(file_path)
+            full_text = []
+            for para in doc.paragraphs:
+                full_text.append(para.text)
+            
+            text = '\n'.join(full_text)
+            if text.strip():
+                return [TextDoc(text, {'source': file_path})]
+            return []
+            
         except Exception as e:
             logger.error(f"Error loading DOCX: {e}")
             return []
     
     def load_text(self, file_path: str) -> List[Any]:
-        """Load text file."""
+        """Load text file directly."""
         try:
-            from langchain_community.document_loaders import TextLoader
-            loader = TextLoader(file_path, encoding='utf-8')
-            return loader.load()
+            class TextDoc:
+                def __init__(self, content, meta):
+                    self.page_content = content
+                    self.metadata = meta
+            
+            logger.info(f"Loading text file: {file_path}")
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            
+            if text.strip():
+                return [TextDoc(text, {'source': file_path})]
+            return []
+            
         except Exception as e:
             logger.error(f"Error loading text: {e}")
             return []
@@ -295,10 +390,48 @@ class SimpleDocumentProcessor:
             return []
     
     def chunk_documents(self, documents: List[Any]) -> List[Any]:
-        """Chunk documents into smaller pieces."""
+        """Chunk documents into smaller pieces using simple chunking."""
         if not documents:
             return []
-        return self.text_splitter.split_documents(documents)
+        
+        chunks = []
+        
+        for doc in documents:
+            # Get the text content
+            if hasattr(doc, 'page_content'):
+                text = doc.page_content
+            else:
+                text = str(doc)
+            
+            # Get metadata
+            metadata = {}
+            if hasattr(doc, 'metadata'):
+                metadata = doc.metadata.copy() if doc.metadata else {}
+            
+            # Simple chunking by characters
+            chunk_size = self.chunk_size
+            overlap = self.chunk_overlap
+            
+            for i in range(0, len(text), chunk_size - overlap):
+                chunk_text = text[i:i + chunk_size]
+                if chunk_text.strip():
+                    # Create a simple chunk object
+                    class Chunk:
+                        def __init__(self, content, meta):
+                            self.page_content = content
+                            self.metadata = meta
+                    
+                    chunk_meta = metadata.copy()
+                    chunk_meta['char_start'] = i
+                    chunk_meta['char_end'] = i + len(chunk_text)
+                    
+                    chunks.append(Chunk(chunk_text, chunk_meta))
+                    
+                if i + chunk_size >= len(text):
+                    break
+        
+        logger.info(f"Created {len(chunks)} chunks from {len(documents)} documents")
+        return chunks
 
 
 class SimpleEmbeddingManager:
@@ -435,13 +568,21 @@ class SimpleVectorStore:
 
 
 class SimpleAnswerGenerator:
-    """Simple answer generator."""
+    """Multimodal-aware answer generator with proper source citations."""
     
     def __init__(self, min_confidence=0.3):
         self.min_confidence = min_confidence
         
     def generate(self, query: str, retrieved_results: List[Dict], total_documents: int = 0):
-        """Generate answer from retrieved results."""
+        """
+        Generate answer from retrieved results with multimodal source citations.
+        
+        Supports:
+        - Text passages with page numbers
+        - Audio segments with timestamps, speaker, and direct quotes
+        - Table references with descriptions
+        - Image references with descriptions
+        """
         class Result:
             def __init__(self, answer_type, answer_text, reasoning, confidence):
                 self.answer_type = answer_type
@@ -458,7 +599,7 @@ class SimpleAnswerGenerator:
             )
         
         # Get best score
-        scores = [r.get('similarity_score', 0) for r in retrieved_results]
+        scores = [r.get('similarity_score', r.get('relevance_score', 0)) for r in retrieved_results]
         best_score = max(scores) if scores else 0
         
         if best_score < self.min_confidence:
@@ -469,39 +610,134 @@ class SimpleAnswerGenerator:
                 confidence="none"
             )
         
-        # Build answer from top results
-        context_parts = []
-        for r in retrieved_results[:3]:
-            content = r.get('content', r.get('page_content', ''))
-            # Clean up the content
-            content = content.strip()
-            # Remove excessive whitespace
-            content = ' '.join(content.split())
-            # Take up to 600 characters per chunk, but try to end at sentence boundary
-            if len(content) > 600:
-                # Find the last sentence ending before 600 chars
-                truncate_point = 600
+        # Build answer from top results - organized by content type
+        text_parts = []
+        audio_parts = []
+        table_parts = []
+        image_parts = []
+        
+        for r in retrieved_results[:5]:
+            content = r.get('content', r.get('page_content', '')).strip()
+            content = ' '.join(content.split())  # Normalize whitespace
+            metadata = r.get('metadata', {})
+            element_type = metadata.get('element_type', metadata.get('chunk_type', 'text'))
+            score = r.get('similarity_score', r.get('relevance_score', 0))
+            
+            if not content:
+                continue
+            
+            # Truncate long content intelligently
+            display_content = content
+            if len(display_content) > 500:
+                truncate_point = 500
                 for sep in ['. ', '! ', '? ', '\n\n']:
-                    last_sep = content[:truncate_point].rfind(sep)
-                    if last_sep > truncate_point * 0.5:  # At least halfway
+                    last_sep = display_content[:truncate_point].rfind(sep)
+                    if last_sep > truncate_point * 0.5:
                         truncate_point = last_sep + len(sep)
                         break
-                content = content[:truncate_point] + "..."
+                display_content = display_content[:truncate_point] + "..."
             
-            if content:
-                context_parts.append(content)
+            if element_type == 'audio':
+                # Format audio with timestamp, speaker, and quoted transcript
+                timestamp = metadata.get('timestamp_str', metadata.get('timestamp', ''))
+                speaker = metadata.get('speaker', '')
+                tone = metadata.get('tone', '')
+                source_file = metadata.get('filename', 'Unknown audio')
+                
+                citation_label = f"[Audio: {source_file}"
+                if timestamp:
+                    citation_label += f" at {timestamp}"
+                if speaker and speaker != 'Unknown':
+                    citation_label += f", {speaker}"
+                citation_label += "]"
+                
+                audio_entry = f'**{citation_label}**'
+                if tone and tone != 'neutral':
+                    audio_entry += f' *(tone: {tone})*'
+                audio_entry += f':\n> "{display_content}"'
+                
+                audio_parts.append(audio_entry)
+                
+            elif element_type == 'table':
+                source_file = metadata.get('filename', 'Unknown')
+                page_num = metadata.get('page_number', '')
+                rows = metadata.get('rows', 0)
+                cols = metadata.get('columns', 0)
+                
+                table_entry = f'**[Table: {source_file}'
+                if page_num:
+                    table_entry += f", Page {page_num}"
+                table_entry += f" ({rows} rows × {cols} columns)]**:\n"
+                
+                # Show analysis/summary if available
+                analysis = metadata.get('analysis', '')
+                if analysis:
+                    # Take first 200 chars of analysis
+                    analysis_summary = analysis[:200] + "..." if len(analysis) > 200 else analysis
+                    table_entry += f"> {analysis_summary}"
+                else:
+                    table_entry += f"> {display_content[:300]}..."
+                
+                table_parts.append(table_entry)
+                
+            elif element_type == 'image':
+                source_file = metadata.get('filename', 'Unknown')
+                page_num = metadata.get('page_number', '')
+                description = metadata.get('description', metadata.get('image_caption', ''))
+                chart_type = metadata.get('chart_type', 'unknown')
+                
+                img_entry = f'**[Image: {source_file}'
+                if page_num:
+                    img_entry += f", Page {page_num}"
+                if chart_type != 'unknown':
+                    img_entry += f" - {chart_type} chart"
+                img_entry += "]**:\n"
+                
+                if description:
+                    desc_summary = description[:300] + "..." if len(description) > 300 else description
+                    img_entry += f"> {desc_summary}"
+                else:
+                    img_entry += f"> {display_content[:300]}..."
+                
+                image_parts.append(img_entry)
+                
+            else:
+                # Text content - standard format
+                source_file = metadata.get('filename', 'Unknown')
+                page_num = metadata.get('page_number', '')
+                
+                citation_label = f"[Source: {source_file}"
+                if page_num:
+                    citation_label += f", Page {page_num}"
+                citation_label += "]"
+                
+                text_parts.append(f'**{citation_label}**:\n> {display_content}')
         
-        # Combine context with proper spacing
-        if len(context_parts) == 1:
-            context = context_parts[0]
-        else:
-            context = "\n\n---\n\n".join(context_parts)
+        # Combine all parts into the final answer
+        answer_sections = []
         
-        # Build final answer
-        if len(retrieved_results) == 1:
-            answer = f"Based on the uploaded document:\n\n{context}"
+        if text_parts:
+            if len(text_parts) == 1:
+                answer_sections.append(f"**From the document:**\n\n{text_parts[0]}")
+            else:
+                answer_sections.append("**From the documents:**\n\n" + "\n\n".join(text_parts))
+        
+        if audio_parts:
+            if len(audio_parts) == 1:
+                answer_sections.append(f"**From the audio recording:**\n\n{audio_parts[0]}")
+            else:
+                answer_sections.append("**From the audio recording:**\n\n" + "\n\n".join(audio_parts))
+        
+        if table_parts:
+            answer_sections.append("**From tables in the documents:**\n\n" + "\n\n".join(table_parts))
+        
+        if image_parts:
+            answer_sections.append("**From images in the documents:**\n\n" + "\n\n".join(image_parts))
+        
+        if answer_sections:
+            answer = "\n\n---\n\n".join(answer_sections)
         else:
-            answer = f"Based on the uploaded documents, here are the most relevant passages:\n\n{context}"
+            answer = "Found relevant content but could not format it properly."
         
         if best_score >= 0.7:
             confidence = "high"
@@ -523,28 +759,173 @@ class SimpleAnswerGenerator:
 # ============================================================================
 
 def process_audio_file(file_path: str) -> Dict[str, Any]:
-    """Process audio file using Whisper."""
+    """
+    Process audio file using Gemini API (preferred) or Whisper (fallback).
+    
+    Gemini is preferred as it provides speaker diarization, timestamps,
+    and tone detection without needing local model downloads.
+    """
     result = {
         'success': False,
         'text': '',
         'error': None
     }
     
-    if not WHISPER_AVAILABLE:
-        result['error'] = "Audio transcription not available. Install openai-whisper"
-        return result
-    
+    # Try Gemini first (no local model needed)
     try:
-        logger.info(f"Transcribing audio: {file_path}")
-        model = whisper.load_model("base")
-        transcription = model.transcribe(file_path)
+        import google.generativeai as genai
+        import mimetypes
+        
+        api_key = os.environ.get('GOOGLE_API_KEY')
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY not set")
+        
+        genai.configure(api_key=api_key)
+        
+        logger.info(f"Transcribing audio with Gemini: {file_path}")
+        
+        # Determine MIME type
+        ext = os.path.splitext(file_path)[1].lower()
+        mime_type = mimetypes.guess_type(file_path)[0] or 'audio/mpeg'
+        
+        # Upload to Gemini
+        audio_file = genai.upload_file(
+            path=file_path,
+            display_name=os.path.basename(file_path),
+            mime_type=mime_type
+        )
+        
+        # Transcribe with speaker diarization
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        prompt = """You are an expert audio transcription specialist. Provide a detailed transcription with speaker identification.
+
+For each distinct speaker segment, provide:
+1. The speaker identifier (Speaker 1, Speaker 2, etc.)
+2. The timestamp (start time) in format [MM:SS]
+3. The transcribed text for that segment
+4. Speech characteristics: tone/emotion (neutral, happy, sad, angry, excited, professional, calm, etc.)
+5. Confidence score for the transcription (0-1)
+
+Format your response as a JSON array of segments:
+[
+  {
+    "speaker": "Speaker 1",
+    "timestamp": "[00:05]",
+    "text": "Hello everyone, welcome to the presentation.",
+    "tone": "neutral",
+    "confidence": 0.92
+  }
+]
+
+Return the result wrapped in: {"segments": [...], "summary": {"audio_quality": "...", "background_noise": "...", "language_detected": "...", "estimated_speakers": N}}
+"""
+        
+        response = model.generate_content([prompt, audio_file])
+        
+        # Clean up uploaded file
+        try:
+            genai.delete_file(audio_file.name)
+        except:
+            pass
+        
+        # Parse the response
+        transcript_text = response.text
+        
+        # Try to extract JSON
+        import json
+        segments = []
+        full_text = ''
+        
+        try:
+            json_match = re.search(r'\{.*\}', transcript_text, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                if 'segments' in parsed:
+                    for seg in parsed['segments']:
+                        text = seg.get('text', '').strip()
+                        speaker = seg.get('speaker', 'Unknown')
+                        timestamp = seg.get('timestamp', '')
+                        segments.append({
+                            'text': text,
+                            'speaker': speaker,
+                            'timestamp': timestamp,
+                            'timestamp_seconds': _parse_timestamp_to_seconds(timestamp),
+                            'tone': seg.get('tone', 'neutral'),
+                            'confidence': float(seg.get('confidence', 0.8))
+                        })
+                    full_text = ' '.join([s['text'] for s in segments])
+        except Exception as parse_error:
+            logger.warning(f"JSON parsing failed, using raw text: {parse_error}")
+            full_text = transcript_text
+        
+        if not full_text:
+            full_text = transcript_text
+        
         result['success'] = True
-        result['text'] = transcription.get('text', '')
-    except Exception as e:
-        logger.error(f"Audio transcription error: {e}")
-        result['error'] = str(e)
+        result['text'] = full_text
+        result['segments'] = segments if segments else None
+        
+    except Exception as gemini_error:
+        error_str = str(gemini_error)
+        logger.warning(f"Gemini audio transcription failed: {gemini_error}")
+        
+        # Check if it's a quota error
+        is_quota_error = '429' in error_str or 'quota' in error_str.lower() or 'RESOURCE_EXHAUSTED' in error_str
+        
+        # Fallback to Whisper if available
+        if WHISPER_AVAILABLE:
+            try:
+                # Ensure ffmpeg is in PATH for whisper
+                try:
+                    import shutil as shutil_mod
+                    from imageio_ffmpeg import get_ffmpeg_exe
+                    ffmpeg_exe = get_ffmpeg_exe()
+                    ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+                    ffmpeg_standard = os.path.join(ffmpeg_dir, 'ffmpeg.exe')
+                    if not os.path.exists(ffmpeg_standard):
+                        shutil_mod.copy2(ffmpeg_exe, ffmpeg_standard)
+                    if ffmpeg_dir not in os.environ.get('PATH', ''):
+                        os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+                except Exception:
+                    pass
+                
+                logger.info(f"Falling back to Whisper: {file_path}")
+                model = whisper.load_model("base")
+                transcription = model.transcribe(file_path)
+                result['success'] = True
+                result['text'] = transcription.get('text', '')
+                result['segments'] = None
+            except Exception as whisper_error:
+                logger.error(f"Whisper transcription error: {whisper_error}")
+                result['error'] = str(whisper_error)
+        else:
+            if is_quota_error:
+                result['error'] = (
+                    "Gemini API quota exceeded. Options:\n"
+                    "1. Wait a few minutes and try again\n"
+                    "2. Get a new API key at https://aistudio.google.com/app/apikey\n"
+                    "3. Install Whisper for offline transcription: pip install openai-whisper"
+                )
+            else:
+                result['error'] = f"Audio transcription failed: {gemini_error}. Install openai-whisper as fallback."
     
     return result
+
+
+def _parse_timestamp_to_seconds(timestamp_str: str) -> float:
+    """Convert timestamp string like 'MM:SS' or '[MM:SS]' to seconds."""
+    try:
+        # Remove brackets
+        ts = timestamp_str.strip('[]').strip()
+        parts = ts.split(':')
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])
+        elif len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+        return 0.0
+    except (ValueError, IndexError, AttributeError):
+        return 0.0
 
 
 # ============================================================================
@@ -559,6 +940,7 @@ class RAGApplicationState:
         self.vector_store = None
         self.document_processor = None
         self.answer_generator = None
+        self.relevance_scorer = None  # Multimodal relevance scorer
         self.uploaded_files = {}
         self.is_initialized = False
         
@@ -575,8 +957,42 @@ class RAGApplicationState:
             chunk_overlap=app.config['CHUNK_OVERLAP']
         )
         
-        # Initialize embedding manager
-        self.embedding_manager = SimpleEmbeddingManager('all-MiniLM-L6-v2')
+        # Initialize embedding manager - check for Gemini first
+        embedding_provider = os.environ.get('EMBEDDING_PROVIDER', '').lower()
+        
+        # Track actual provider
+        self.actual_embedding_provider = 'sentence-transformers'
+        
+        if embedding_provider == 'gemini':
+            # Try to use Gemini Embedding 2
+            try:
+                from embedding_manager import EmbeddingManager
+                
+                gemini_dims = int(os.environ.get('GEMINI_EMBEDDING_DIMENSIONS', 768))
+                
+                self.embedding_manager = EmbeddingManager(
+                    provider='gemini',
+                    model_name='models/gemini-embedding-2-preview',
+                    output_dimensions=gemini_dims,
+                    task_type='retrieval_document'
+                )
+                self.actual_embedding_provider = 'gemini'
+                logger.info(f"Using Gemini Embedding 2 with {gemini_dims} dimensions")
+                
+            except Exception as e:
+                error_msg = str(e)
+                # Check for Python version compatibility issue
+                if "Metaclasses" in error_msg or "tp_new" in error_msg:
+                    logger.warning(f"Gemini incompatible with Python 3.14: {error_msg}")
+                    logger.info("Falling back to sentence-transformers (Gemini requires Python 3.11-3.13)")
+                else:
+                    logger.warning(f"Failed to initialize Gemini: {e}")
+                    logger.info("Falling back to sentence-transformers")
+                self.embedding_manager = SimpleEmbeddingManager('all-MiniLM-L6-v2')
+                self.actual_embedding_provider = 'sentence-transformers'
+        else:
+            # Use default sentence-transformers
+            self.embedding_manager = SimpleEmbeddingManager('all-MiniLM-L6-v2')
         
         # Initialize vector store
         self.vector_store = SimpleVectorStore(
@@ -587,6 +1003,15 @@ class RAGApplicationState:
         self.answer_generator = SimpleAnswerGenerator(
             min_confidence=app.config['SIMILARITY_THRESHOLD']
         )
+        
+        # Initialize multimodal relevance scorer
+        if RELEVANCE_SCORER_AVAILABLE:
+            try:
+                self.relevance_scorer = create_relevance_scorer(self.embedding_manager)
+                logger.info("Multimodal relevance scorer initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize relevance scorer: {e}")
+                self.relevance_scorer = None
         
         self.is_initialized = True
         logger.info("RAG application initialized successfully")
@@ -611,6 +1036,22 @@ def get_file_extension(filename: str) -> str:
 def generate_file_id() -> str:
     """Generate unique file ID."""
     return hashlib.md5(str(datetime.now().isoformat()).encode()).hexdigest()[:12]
+
+
+def allowed_audio(filename: str) -> bool:
+    """
+    Check if the uploaded file is an allowed audio type.
+    
+    Args:
+        filename: Name of the uploaded file
+        
+    Returns:
+        bool: True if allowed audio format, False otherwise
+    """
+    if '.' not in filename:
+        return False
+    ext = filename.rsplit('.', 1)[1].lower()
+    return ext in app.config.get('ALLOWED_AUDIO_EXTENSIONS', AUDIO_EXTENSIONS)
 
 
 def allowed_image(filename: str) -> bool:
@@ -769,6 +1210,189 @@ def process_pdf_multimodal(file_path: str, file_id: str) -> Dict[str, Any]:
     return result
 
 
+# ============================================================================
+# UNIFIED GEMINI PROCESSOR INTEGRATION
+# ============================================================================
+
+def process_with_unified_processor(file_path: str, file_id: str) -> Dict[str, Any]:
+    """
+    Process files using the unified Gemini-powered processor.
+    Supports PDF, DOCX, and audio files with deep analysis.
+    """
+    global unified_processor
+    
+    result = {
+        'success': False,
+        'file_id': file_id,
+        'file_name': os.path.basename(file_path),
+        'file_type': get_file_extension(file_path),
+        'chunks_created': 0,
+        'elements_extracted': {'text': 0, 'tables': 0, 'images': 0},
+        'error': None
+    }
+    
+    # Initialize processor if not already
+    if unified_processor is None:
+        try:
+            api_key = os.environ.get('GOOGLE_API_KEY')
+            unified_processor = create_processor(api_key)
+            logger.info("Unified processor initialized")
+        except Exception as e:
+            result['error'] = f"Failed to initialize processor: {e}"
+            return result
+    
+    try:
+        logger.info(f"Processing with unified Gemini processor: {file_path}")
+        
+        # Process the file
+        processed_doc = unified_processor.process_file(file_path, extract_images=True)
+        
+        if not processed_doc or not processed_doc.chunks:
+            result['error'] = "No content extracted from file"
+            return result
+        
+        # Convert chunks to format for vector store
+        # We need to create simple document objects
+        class ChunkDoc:
+            def __init__(self, content, meta):
+                self.page_content = content
+                self.metadata = meta
+        
+        documents = []
+        metadatas = []
+        
+        for chunk in processed_doc.chunks:
+            # Create metadata
+            meta = {
+                'document_id': chunk.document_id,
+                'filename': chunk.source_file,
+                'file_type': f'.{processed_doc.file_type}',
+                'chunk_type': chunk.chunk_type,
+                'chunk_index': len(documents),
+                'page_number': chunk.page_number or 1
+            }
+            
+            # Add type-specific metadata
+            if chunk.chunk_type == 'image':
+                meta['element_type'] = 'image'
+                meta['image_caption'] = chunk.metadata.get('description', '')
+                meta['image_keywords'] = chunk.metadata.get('keywords', [])
+                if chunk.image_data:
+                    meta['has_image_data'] = True
+                # Enhanced image metadata
+                meta['description'] = chunk.metadata.get('description', '')
+                meta['chart_type'] = chunk.metadata.get('chart_type', 'unknown')
+                meta['chart_title'] = chunk.metadata.get('chart_title', '')
+                meta['chart_caption'] = chunk.metadata.get('chart_caption', '')
+                meta['data_points'] = chunk.metadata.get('data_points', [])
+                meta['text_blocks'] = chunk.metadata.get('text_blocks', [])
+                meta['trends'] = chunk.metadata.get('trends', [])
+                meta['axes_info'] = chunk.metadata.get('axes_info', {})
+                meta['legends_info'] = chunk.metadata.get('legends_info', [])
+                meta['statistics_visible'] = chunk.metadata.get('statistics_visible', [])
+                meta['document_type'] = chunk.metadata.get('document_type', 'unknown')
+                meta['subject_area'] = chunk.metadata.get('subject_area', 'unknown')
+                meta['likely_purpose'] = chunk.metadata.get('likely_purpose', 'unknown')
+                meta['objects_detected'] = chunk.metadata.get('objects_detected', [])
+                meta['confidence_scores'] = chunk.metadata.get('confidence_scores', {})
+                meta['has_chart_data'] = chunk.metadata.get('has_chart_data', False)
+                meta['has_text_content'] = chunk.metadata.get('has_text_content', False)
+                meta['has_objects'] = chunk.metadata.get('has_objects', False)
+            elif chunk.chunk_type == 'table':
+                meta['element_type'] = 'table'
+                meta['table_data'] = chunk.table_data
+                # Enhanced table metadata
+                meta['analysis'] = chunk.metadata.get('analysis', '')
+                meta['rows'] = chunk.metadata.get('rows', 0)
+                meta['columns'] = chunk.metadata.get('columns', 0)
+                meta['table_structure'] = chunk.metadata.get('table_structure', {})
+                meta['column_details'] = chunk.metadata.get('column_details', [])
+                meta['relationships'] = chunk.metadata.get('relationships', [])
+                meta['patterns_insights'] = chunk.metadata.get('patterns_insights', [])
+                meta['data_quality'] = chunk.metadata.get('data_quality', {})
+                meta['suggested_visualizations'] = chunk.metadata.get('suggested_visualizations', [])
+                meta['potential_use_cases'] = chunk.metadata.get('potential_use_cases', [])
+                meta['confidence_scores'] = chunk.metadata.get('confidence_scores', {})
+                meta['has_numeric_data'] = chunk.metadata.get('has_numeric_data', False)
+                meta['has_date_data'] = chunk.metadata.get('has_date_data', False)
+                meta['key_columns'] = chunk.metadata.get('key_columns', [])
+                meta['header_row_present'] = chunk.metadata.get('header_row_present', False)
+            elif chunk.chunk_type == 'audio':
+                meta['element_type'] = 'audio'
+                meta['timestamp'] = chunk.timestamp
+                meta['timestamp_str'] = chunk.metadata.get('timestamp_str', '')
+                # Enhanced audio metadata
+                meta['speaker'] = chunk.metadata.get('speaker', 'Unknown')
+                meta['tone'] = chunk.metadata.get('tone', 'neutral')
+                meta['confidence'] = chunk.metadata.get('confidence', 0.8)
+                meta['word_count'] = chunk.metadata.get('word_count', 0)
+                meta['is_speaker_change'] = chunk.metadata.get('is_speaker_change', False)
+                # Full transcript metadata
+                if chunk.metadata.get('is_full_transcript'):
+                    meta['is_full_transcript'] = True
+                    meta['unique_speakers'] = chunk.metadata.get('unique_speakers', [])
+                    meta['diarization_success'] = chunk.metadata.get('diarization_success', False)
+                    meta['audio_quality'] = chunk.metadata.get('audio_quality', 'unknown')
+                    meta['background_noise'] = chunk.metadata.get('background_noise', 'none detected')
+                    meta['language_detected'] = chunk.metadata.get('language_detected', 'unknown')
+                    meta['estimated_speakers'] = chunk.metadata.get('estimated_speakers', 1)
+                    meta['speech_rate_wpm'] = chunk.metadata.get('speech_rate_wpm', 0.0)
+            
+            # Add to lists - use chunk.content
+            documents.append(ChunkDoc(chunk.content, meta))
+            metadatas.append(meta)
+        
+        # Generate embeddings using the unified processor's embeddings
+        if processed_doc.chunks and processed_doc.chunks[0].embedding:
+            # Use pre-computed embeddings from the processor
+            embeddings = [chunk.embedding for chunk in processed_doc.chunks]
+        else:
+            # Fallback: generate embeddings using app's embedding manager
+            logger.info("Using app embedding manager for embeddings")
+            text_contents = [chunk.content for chunk in processed_doc.chunks]
+            embeddings = app_state.embedding_manager.embed_documents(text_contents)
+        
+        # Add to vector store
+        app_state.vector_store.add_documents(documents, embeddings, metadatas)
+        
+        # Count elements
+        element_counts = {'text': 0, 'table': 0, 'image': 0, 'audio': 0}
+        for chunk in processed_doc.chunks:
+            if chunk.chunk_type == 'text':
+                element_counts['text'] += 1
+            elif chunk.chunk_type in element_counts:
+                element_counts[chunk.chunk_type] += 1
+        
+        result['success'] = True
+        result['chunks_created'] = len(processed_doc.chunks)
+        result['elements_extracted'] = element_counts
+        
+        # Store file info
+        app_state.uploaded_files[file_id] = {
+            'file_path': file_path,
+            'filename': os.path.basename(file_path),
+            'file_type': f'.{processed_doc.file_type}',
+            'document_id': file_id,
+            'chunks': len(processed_doc.chunks),
+            'upload_time': datetime.now().isoformat(),
+            'multimodal': True,
+            'element_counts': element_counts,
+            'gemini_processed': True
+        }
+        
+        logger.info(f"Unified processor: {len(processed_doc.chunks)} chunks "
+                   f"({element_counts['text']} text, {element_counts['table']} tables, "
+                   f"{element_counts['image']} images, {element_counts['audio']} audio)")
+        
+    except Exception as e:
+        logger.error(f"Unified processor error: {e}")
+        import traceback
+        traceback.print_exc()
+        result['error'] = str(e)
+    
+    return result
+
+
 def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
     """Process an uploaded file based on its type."""
     result = {
@@ -786,9 +1410,18 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
         
         documents = []
         
+        # Use unified Gemini processor if available (for PDF, DOCX, audio)
+        if UNIFIED_PROCESSOR_AVAILABLE and file_ext in ['pdf', 'docx', 'mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'aiff', 'opus', 'webm', 'amr', '3gp', 'midi', 'mid', 'ra', 'ram', 'mp2', 'ac3', 'mp4', 'm4b', 'm4p', 'oga']:
+            try:
+                logger.info(f"Processing {file_ext} with unified Gemini processor: {file_path}")
+                return process_with_unified_processor(file_path, file_id)
+            except Exception as unified_error:
+                logger.error(f"Unified processor failed, falling back to basic: {unified_error}")
+                # Continue to basic processing below
+        
+        # Basic processing (fallback or for text files)
         if file_ext == 'pdf':
             # Use multimodal processing if available and enabled, otherwise fallback to basic
-            # Wrap in try-except to prevent crashes from model loading failures
             if MULTIMODAL_AVAILABLE and app.config.get('USE_MULTIMODAL_PDF', True):
                 try:
                     logger.info(f"Processing PDF with multimodal extraction: {file_path}")
@@ -809,7 +1442,7 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
             logger.info(f"Processing TXT: {file_path}")
             documents = app_state.document_processor.load_document(file_path)
             
-        elif file_ext in ['mp3', 'wav', 'ogg', 'm4a', 'flac']:
+        elif file_ext in ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'aiff', 'opus', 'webm', 'amr', '3gp', 'midi', 'mid', 'ra', 'ram', 'mp2', 'ac3', 'mp4', 'm4b', 'm4p', 'oga']:
             logger.info(f"Processing audio: {file_path}")
             audio_result = process_audio_file(file_path)
             
@@ -841,7 +1474,18 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
         
         # Chunk documents
         if documents:
-            chunks = app_state.document_processor.chunk_documents(documents)
+            logger.info(f"Document count: {len(documents)}")
+            logger.info(f"First doc type: {type(documents[0])}")
+            
+            try:
+                chunks = app_state.document_processor.chunk_documents(documents)
+                logger.info(f"Chunk count after chunking: {len(chunks)}")
+            except Exception as chunk_error:
+                logger.error(f"Chunking error: {chunk_error}")
+                import traceback
+                traceback.print_exc()
+                result['error'] = f"Chunking error: {str(chunk_error)}"
+                return result
             
             # Add metadata to chunks
             for i, chunk in enumerate(chunks):
@@ -853,12 +1497,26 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
             
             # Generate embeddings with timeout protection
             logger.info(f"Generating embeddings for {len(chunks)} chunks...")
-            embeddings_result = run_with_timeout(
-                app_state.embedding_manager.embed_documents,
-                args=(chunks,),
-                timeout_seconds=180,
-                default=None
-            )
+            logger.info(f"First chunk type: {type(chunks[0]) if chunks else 'None'}")
+            
+            try:
+                # Convert chunks to text strings if needed
+                text_contents = []
+                for chunk in chunks:
+                    if hasattr(chunk, 'page_content'):
+                        text_contents.append(chunk.page_content)
+                    else:
+                        text_contents.append(str(chunk))
+                
+                logger.info(f"Text contents count: {len(text_contents)}, first length: {len(text_contents[0]) if text_contents else 0}")
+                embeddings_result = app_state.embedding_manager.embed_documents(text_contents)
+                logger.info(f"Embedding result type: {type(embeddings_result)}, count: {len(embeddings_result) if embeddings_result else 0}")
+            except Exception as emb_error:
+                logger.error(f"Embedding error: {emb_error}")
+                import traceback
+                traceback.print_exc()
+                result['error'] = f"Embedding error: {str(emb_error)}"
+                return result
             
             if embeddings_result is None:
                 # Timeout or error - try with fewer chunks as fallback
@@ -866,7 +1524,9 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
                 try:
                     # Try with just the first chunk as emergency fallback
                     single_chunk = chunks[:1]
-                    embeddings_result = app_state.embedding_manager.embed_documents(single_chunk)
+                    # Convert to text first
+                    single_text = [single_chunk[0].page_content] if hasattr(single_chunk[0], 'page_content') else [str(single_chunk[0])]
+                    embeddings_result = app_state.embedding_manager.embed_documents(single_text)
                     chunks = single_chunk
                     logger.info("Using emergency fallback: single chunk embedding")
                 except Exception as fallback_error:
@@ -1025,7 +1685,7 @@ def process_image_file(file_path: str, file_id: str) -> Dict[str, Any]:
 # ============================================================================
 
 def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
-    """Retrieve relevant documents and generate answer with citations."""
+    """Retrieve relevant documents and generate answer with citations using multimodal re-ranking."""
     result = {
         'success': False,
         'answer': '',
@@ -1037,10 +1697,11 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
         # Embed the query
         query_embedding = app_state.embedding_manager.embed_query(query)
         
-        # Search vector store
+        # Search vector store (get more results for re-ranking)
+        initial_k = max(max_results * 3, 20)  # Get 3x for re-ranking
         search_results = app_state.vector_store.similarity_search(
             query_embedding=query_embedding,
-            k=max_results
+            k=initial_k
         )
         
         if not search_results:
@@ -1048,14 +1709,41 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
             result['success'] = True
             return result
         
+        # Apply multimodal re-ranking if available
+        if app_state.relevance_scorer and len(search_results) > 1:
+            try:
+                reranked = app_state.relevance_scorer.rerank_results(
+                    query=query,
+                    initial_results=search_results,
+                    top_k=max_results
+                )
+                # Convert back to list of docs with updated scores
+                search_results = []
+                for chunk, score, breakdown in reranked:
+                    if hasattr(chunk, 'metadata'):
+                        chunk.metadata['relevance_score'] = score
+                        chunk.metadata['relevance_breakdown'] = breakdown
+                        # Keep the original similarity score too
+                        if 'similarity_score' not in chunk.metadata:
+                            chunk.metadata['similarity_score'] = score
+                    search_results.append(chunk)
+                logger.info(f"Re-ranked {len(reranked)} results using multimodal scorer")
+            except Exception as e:
+                logger.warning(f"Re-ranking failed, using original results: {e}")
+                search_results = search_results[:max_results]
+        else:
+            search_results = search_results[:max_results]
+        
         # Prepare retrieved results
         retrieved_data = []
         for doc in search_results:
             score = doc.metadata.get('similarity_score', 0) if hasattr(doc, 'metadata') else 0
+            relevance_score = doc.metadata.get('relevance_score', score) if hasattr(doc, 'metadata') else score
             retrieved_data.append({
                 'content': doc.page_content if hasattr(doc, 'page_content') else str(doc),
                 'metadata': doc.metadata if hasattr(doc, 'metadata') else {},
-                'similarity_score': score
+                'similarity_score': score,
+                'relevance_score': relevance_score
             })
         
         # Generate answer
@@ -1070,7 +1758,7 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
         for doc in search_results:
             metadata = doc.metadata if hasattr(doc, 'metadata') else {}
             page_num = metadata.get('page_number', 'N/A')
-            element_type = metadata.get('element_type', 'text')  # 'text', 'table', 'image'
+            element_type = metadata.get('element_type', metadata.get('chunk_type', 'text'))
             
             content = doc.page_content if hasattr(doc, 'page_content') else str(doc)
             verbatim = content[:300]
@@ -1083,37 +1771,76 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
                 'page_number': page_num,
                 'chunk_index': metadata.get('chunk_index', 0),
                 'similarity_score': metadata.get('similarity_score', 0),
+                'relevance_score': metadata.get('relevance_score', metadata.get('similarity_score', 0)),
                 'verbatim': verbatim,
                 'full_text': content,
                 'source_type': element_type,
                 'location': f"Page {page_num}, {element_type.title()}"
             }
             
-            # Add type-specific fields
+            # Add relevance breakdown if available
+            if 'relevance_breakdown' in metadata:
+                citation['relevance_breakdown'] = metadata['relevance_breakdown']
+            
+            # Add type-specific fields for tables
             if element_type == 'table':
                 citation['is_table'] = True
-                citation['markdown_table'] = content  # Table is already in Markdown
+                citation['markdown_table'] = content
                 citation['location'] = f"Page {page_num}, Table"
-                if 'table_rows' in metadata:
-                    citation['table_rows'] = metadata['table_rows']
-                if 'table_columns' in metadata:
-                    citation['table_columns'] = metadata['table_columns']
+                # Enhanced table metadata
+                if 'table_structure' in metadata:
+                    citation['table_structure'] = metadata['table_structure']
+                if 'column_details' in metadata:
+                    citation['column_details'] = metadata['column_details']
+                if 'patterns_insights' in metadata:
+                    citation['patterns_insights'] = metadata['patterns_insights']
+                if 'rows' in metadata:
+                    citation['table_rows'] = metadata['rows']
+                if 'columns' in metadata:
+                    citation['table_columns'] = metadata['columns']
             
+            # Add type-specific fields for images
             elif element_type == 'image':
                 citation['is_image'] = True
-                citation['image_caption'] = metadata.get('image_caption', '')
+                citation['image_caption'] = metadata.get('image_caption', metadata.get('description', ''))
                 citation['ocr_text'] = metadata.get('ocr_text', '')
-                citation['has_text'] = metadata.get('has_text', False)
+                citation['has_text'] = metadata.get('has_text', metadata.get('has_text_content', False))
+                # Enhanced image metadata
+                if 'chart_type' in metadata:
+                    citation['chart_type'] = metadata['chart_type']
+                if 'data_points' in metadata:
+                    citation['data_points'] = metadata['data_points']
+                if 'trends' in metadata:
+                    citation['trends'] = metadata['trends']
+                if 'chart_title' in metadata:
+                    citation['chart_title'] = metadata['chart_title']
+                if 'subject_area' in metadata:
+                    citation['subject_area'] = metadata['subject_area']
                 
                 # If image was saved, provide URL
                 if 'image_path' in metadata:
-                    # Convert absolute path to relative URL
                     img_filename = os.path.basename(metadata['image_path'])
                     citation['image_url'] = f"/static/extracted_images/{img_filename}"
                 elif 'element_id' in metadata:
-                    # Fallback: construct expected path
                     img_filename = f"{metadata['element_id']}.png"
                     citation['image_url'] = f"/static/extracted_images/{img_filename}"
+            
+            # Add type-specific fields for audio
+            elif element_type == 'audio':
+                citation['is_audio'] = True
+                citation['timestamp'] = metadata.get('timestamp_str', metadata.get('timestamp', ''))
+                citation['timestamp_seconds'] = metadata.get('timestamp', 0)
+                # Enhanced audio metadata
+                if 'speaker' in metadata:
+                    citation['speaker'] = metadata['speaker']
+                if 'tone' in metadata:
+                    citation['tone'] = metadata['tone']
+                if 'confidence' in metadata:
+                    citation['transcription_confidence'] = metadata['confidence']
+                if 'is_speaker_change' in metadata:
+                    citation['is_speaker_change'] = metadata['is_speaker_change']
+                if 'audio_quality' in metadata:
+                    citation['audio_quality'] = metadata['audio_quality']
             
             citations.append(citation)
         
@@ -1125,6 +1852,7 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
         result['citations'] = citations
         result['answer_type'] = generated_answer.answer_type
         result['confidence'] = generated_answer.confidence
+        result['reranking_applied'] = app_state.relevance_scorer is not None
         
     except Exception as e:
         logger.error(f"Query error: {e}")
@@ -1147,13 +1875,35 @@ def index():
 @app.route('/api/health')
 def health_check():
     """Health check endpoint."""
+    # Check which embedding provider is configured
+    embedding_provider = os.environ.get('EMBEDDING_PROVIDER', '').lower()
+    is_gemini = embedding_provider == 'gemini' and os.environ.get('GOOGLE_API_KEY')
+    
+    # Determine actual provider based on what was initialized
+    actual_provider = 'sentence-transformers'  # Default
+    if hasattr(app_state, 'actual_embedding_provider'):
+        actual_provider = app_state.actual_embedding_provider
+    
     return jsonify({
         'status': 'ok',
         'rag_initialized': app_state.is_initialized,
         'files_uploaded': len(app_state.uploaded_files),
+        'embedding_provider': actual_provider,
+        'embedding_dimension': app_state.embedding_manager.get_embedding_dimension() if app_state.embedding_manager else 'N/A',
+        'gemini_requested': is_gemini,
+        'gemini_compatible': False,  # Python 3.14 not compatible
         'sentence_transformers': SENTENCE_TRANSFORMERS_AVAILABLE,
         'langchain': LANGCHAIN_AVAILABLE,
-        'whisper': WHISPER_AVAILABLE
+        'whisper': WHISPER_AVAILABLE,
+        'multimodal_pdf': MULTIMODAL_AVAILABLE,
+        'relevance_scorer': RELEVANCE_SCORER_AVAILABLE and app_state.relevance_scorer is not None,
+        'multimodal_features': {
+            'image_analysis': True,
+            'table_analysis': True,
+            'audio_diarization': True,
+            'relevance_scoring': RELEVANCE_SCORER_AVAILABLE and app_state.relevance_scorer is not None,
+            'multimodal_api_endpoints': True
+        }
     })
 
 @app.route('/api/initialize', methods=['POST'])
@@ -1163,12 +1913,27 @@ def initialize():
         if not app_state.is_initialized:
             app_state.initialize()
         
+        # Check which embedding provider is being used
+        embedding_provider = os.environ.get('EMBEDDING_PROVIDER', '').lower()
+        is_gemini = embedding_provider == 'gemini' and os.environ.get('GOOGLE_API_KEY')
+        
         return jsonify({
             'success': True,
             'message': 'RAG application initialized',
+            'embedding_provider': 'gemini' if is_gemini else 'sentence-transformers',
+            'embedding_dimension': app_state.embedding_manager.get_embedding_dimension() if app_state.embedding_manager else 'N/A',
             'sentence_transformers': SENTENCE_TRANSFORMERS_AVAILABLE,
             'langchain': LANGCHAIN_AVAILABLE,
-            'whisper': WHISPER_AVAILABLE
+            'whisper': WHISPER_AVAILABLE,
+            'multimodal': MULTIMODAL_AVAILABLE,
+            'relevance_scorer': RELEVANCE_SCORER_AVAILABLE and app_state.relevance_scorer is not None,
+            'multimodal_features': {
+                'image_analysis': True,
+                'table_analysis': True,
+                'audio_diarization': True,
+                'relevance_scoring': RELEVANCE_SCORER_AVAILABLE and app_state.relevance_scorer is not None,
+                'multimodal_api_endpoints': True
+            }
         })
     except Exception as e:
         logger.error(f"Initialization error: {e}")
@@ -1181,8 +1946,11 @@ def initialize():
 def upload_file():
     """Handle file upload (documents and images)."""
     try:
+        logger.info("=== UPLOAD REQUEST STARTED ===")
+        
         # Initialize if needed
         if not app_state.is_initialized:
+            logger.info("Initializing app state...")
             app_state.initialize()
         
         # Check if file is present
@@ -1221,7 +1989,10 @@ def upload_file():
         logger.info(f"File saved: {file_path}")
         
         # Process the file
+        logger.info(f"Processing file: {file_path}")
         result = process_uploaded_file(file_path, file_id)
+        
+        logger.info(f"Processing result: {result}")
         
         if not result['success']:
             # Clean up
@@ -1520,16 +2291,399 @@ def clear_all():
 
 
 # ============================================================================
+# MULTIMODAL CONTENT API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/multimodal/content/<file_id>', methods=['GET'])
+def get_multimodal_content(file_id):
+    """
+    Get all multimodal content (images, tables, audio) for a specific file.
+    
+    Returns structured multimodal content with analysis metadata.
+    """
+    try:
+        if not app_state.is_initialized:
+            return jsonify({'success': False, 'error': 'Application not initialized'}), 400
+        
+        # Check if file exists
+        if file_id not in app_state.uploaded_files:
+            return jsonify({'success': False, 'error': f'File {file_id} not found'}), 404
+        
+        file_info = app_state.uploaded_files[file_id]
+        
+        # Search vector store for chunks belonging to this file
+        all_chunks = app_state.vector_store.documents
+        file_chunks = []
+        
+        for doc in all_chunks:
+            metadata = doc.metadata if hasattr(doc, 'metadata') else {}
+            if metadata.get('document_id') == file_id or metadata.get('filename') == file_info.get('filename'):
+                file_chunks.append(doc)
+        
+        # Organize by content type
+        images = []
+        tables = []
+        audio_segments = []
+        text_chunks = []
+        
+        for chunk in file_chunks:
+            metadata = chunk.metadata if hasattr(chunk, 'metadata') else {}
+            content = chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
+            element_type = metadata.get('element_type', metadata.get('chunk_type', 'text'))
+            
+            if element_type == 'image':
+                images.append({
+                    'index': len(images),
+                    'content': content,
+                    'description': metadata.get('description', metadata.get('image_caption', '')),
+                    'keywords': metadata.get('keywords', []),
+                    'chart_type': metadata.get('chart_type', 'unknown'),
+                    'chart_title': metadata.get('chart_title', ''),
+                    'subject_area': metadata.get('subject_area', 'unknown'),
+                    'confidence_scores': metadata.get('confidence_scores', {}),
+                    'page_number': metadata.get('page_number', 1)
+                })
+            elif element_type == 'table':
+                tables.append({
+                    'index': len(tables),
+                    'content': content,
+                    'markdown_table': content,
+                    'analysis': metadata.get('analysis', ''),
+                    'rows': metadata.get('rows', 0),
+                    'columns': metadata.get('columns', 0),
+                    'table_structure': metadata.get('table_structure', {}),
+                    'column_details': metadata.get('column_details', []),
+                    'patterns_insights': metadata.get('patterns_insights', []),
+                    'data_quality': metadata.get('data_quality', {}),
+                    'page_number': metadata.get('page_number', 1)
+                })
+            elif element_type == 'audio':
+                audio_segments.append({
+                    'index': len(audio_segments),
+                    'content': content,
+                    'timestamp': metadata.get('timestamp_str', ''),
+                    'timestamp_seconds': metadata.get('timestamp', 0),
+                    'speaker': metadata.get('speaker', 'Unknown'),
+                    'tone': metadata.get('tone', 'neutral'),
+                    'confidence': metadata.get('confidence', 0.8),
+                    'is_speaker_change': metadata.get('is_speaker_change', False)
+                })
+            else:
+                text_chunks.append({
+                    'index': len(text_chunks),
+                    'content': content[:500],
+                    'page_number': metadata.get('page_number', 1)
+                })
+        
+        return jsonify({
+            'success': True,
+            'file_id': file_id,
+            'filename': file_info.get('filename', 'Unknown'),
+            'file_type': file_info.get('file_type', 'unknown'),
+            'multimodal_content': {
+                'images': images,
+                'tables': tables,
+                'audio_segments': audio_segments,
+                'text_chunks': text_chunks
+            },
+            'counts': {
+                'images': len(images),
+                'tables': len(tables),
+                'audio_segments': len(audio_segments),
+                'text_chunks': len(text_chunks)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Multimodal content error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/multimodal/search', methods=['GET'])
+def search_multimodal():
+    """
+    Search specifically for multimodal content (images, tables, audio).
+    
+    Query parameters:
+    - q: Search query (required)
+    - type: Content type filter (image, table, audio, or all)
+    - limit: Maximum results to return (default: 10)
+    """
+    try:
+        if not app_state.is_initialized:
+            return jsonify({'success': False, 'error': 'Application not initialized'}), 400
+        
+        query = request.args.get('q', '').strip()
+        if not query:
+            return jsonify({'success': False, 'error': 'Search query (q) is required'}), 400
+        
+        content_type = request.args.get('type', 'all').lower()
+        limit = int(request.args.get('limit', 10))
+        
+        # Embed query
+        query_embedding = app_state.embedding_manager.embed_query(query)
+        
+        # Search vector store
+        search_results = app_state.vector_store.similarity_search(
+            query_embedding=query_embedding,
+            k=limit * 2  # Get more for filtering
+        )
+        
+        # Filter by content type if specified
+        filtered_results = []
+        for doc in search_results:
+            metadata = doc.metadata if hasattr(doc, 'metadata') else {}
+            element_type = metadata.get('element_type', metadata.get('chunk_type', 'text'))
+            
+            if content_type == 'all' or element_type == content_type:
+                content = doc.page_content if hasattr(doc, 'page_content') else str(doc)
+                result = {
+                    'content': content[:300],
+                    'element_type': element_type,
+                    'similarity_score': metadata.get('similarity_score', 0),
+                    'source_file': metadata.get('filename', 'Unknown'),
+                    'page_number': metadata.get('page_number', 'N/A')
+                }
+                
+                # Add type-specific metadata
+                if element_type == 'image':
+                    result['description'] = metadata.get('description', '')
+                    result['chart_type'] = metadata.get('chart_type', 'unknown')
+                elif element_type == 'table':
+                    result['analysis'] = metadata.get('analysis', '')
+                    result['rows'] = metadata.get('rows', 0)
+                    result['columns'] = metadata.get('columns', 0)
+                elif element_type == 'audio':
+                    result['speaker'] = metadata.get('speaker', 'Unknown')
+                    result['timestamp'] = metadata.get('timestamp_str', '')
+                    result['tone'] = metadata.get('tone', 'neutral')
+                
+                filtered_results.append(result)
+        
+        # Apply relevance scoring if available
+        if app_state.relevance_scorer and filtered_results:
+            try:
+                reranked = app_state.relevance_scorer.rerank_results(query, search_results, top_k=limit)
+                # Update scores in filtered results
+                score_map = {}
+                for chunk, score, breakdown in reranked:
+                    content = chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
+                    score_map[content[:300]] = {'relevance_score': score, 'breakdown': breakdown}
+                
+                for r in filtered_results:
+                    if r['content'] in score_map:
+                        r['relevance_score'] = score_map[r['content']]['relevance_score']
+                        r['relevance_breakdown'] = score_map[r['content']]['breakdown']
+            except Exception as e:
+                logger.warning(f"Relevance scoring failed: {e}")
+        
+        return jsonify({
+            'success': True,
+            'query': query,
+            'content_type_filter': content_type,
+            'results': filtered_results[:limit],
+            'total_found': len(filtered_results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Multimodal search error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/multimodal/image/<file_id>/<int:index>', methods=['GET'])
+def get_image_content(file_id, index):
+    """Serve image data with metadata for a specific file and image index."""
+    try:
+        if not app_state.is_initialized:
+            return jsonify({'success': False, 'error': 'Application not initialized'}), 400
+        
+        if file_id not in app_state.uploaded_files:
+            return jsonify({'success': False, 'error': f'File {file_id} not found'}), 404
+        
+        # Find the image chunk
+        all_docs = app_state.vector_store.documents
+        image_chunks = [
+            doc for doc in all_docs 
+            if hasattr(doc, 'metadata') and 
+               doc.metadata.get('document_id') == file_id and
+               doc.metadata.get('element_type', doc.metadata.get('chunk_type')) == 'image'
+        ]
+        
+        if index >= len(image_chunks):
+            return jsonify({'success': False, 'error': f'Image index {index} out of range (found {len(image_chunks)} images)'}), 404
+        
+        chunk = image_chunks[index]
+        metadata = chunk.metadata
+        
+        response_data = {
+            'success': True,
+            'file_id': file_id,
+            'image_index': index,
+            'content': chunk.page_content if hasattr(chunk, 'page_content') else str(chunk),
+            'metadata': {
+                'description': metadata.get('description', ''),
+                'keywords': metadata.get('keywords', []),
+                'chart_type': metadata.get('chart_type', 'unknown'),
+                'chart_title': metadata.get('chart_title', ''),
+                'chart_caption': metadata.get('chart_caption', ''),
+                'data_points': metadata.get('data_points', []),
+                'trends': metadata.get('trends', []),
+                'text_blocks': metadata.get('text_blocks', []),
+                'axes_info': metadata.get('axes_info', {}),
+                'legends_info': metadata.get('legends_info', []),
+                'subject_area': metadata.get('subject_area', 'unknown'),
+                'document_type': metadata.get('document_type', 'unknown'),
+                'objects_detected': metadata.get('objects_detected', []),
+                'confidence_scores': metadata.get('confidence_scores', {}),
+                'page_number': metadata.get('page_number', 1)
+            }
+        }
+        
+        # Include image data if available (base64)
+        if metadata.get('has_image_data'):
+            response_data['image_data_available'] = True
+            response_data['image_url'] = f"/api/multimodal/image/{file_id}/{index}/data"
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Image content error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/multimodal/table/<file_id>/<int:index>', methods=['GET'])
+def get_table_content(file_id, index):
+    """Serve table data in multiple formats for a specific file and table index."""
+    try:
+        if not app_state.is_initialized:
+            return jsonify({'success': False, 'error': 'Application not initialized'}), 400
+        
+        if file_id not in app_state.uploaded_files:
+            return jsonify({'success': False, 'error': f'File {file_id} not found'}), 404
+        
+        # Find table chunks
+        all_docs = app_state.vector_store.documents
+        table_chunks = [
+            doc for doc in all_docs 
+            if hasattr(doc, 'metadata') and 
+               doc.metadata.get('document_id') == file_id and
+               doc.metadata.get('element_type', doc.metadata.get('chunk_type')) == 'table'
+        ]
+        
+        if index >= len(table_chunks):
+            return jsonify({'success': False, 'error': f'Table index {index} out of range (found {len(table_chunks)} tables)'}), 404
+        
+        chunk = table_chunks[index]
+        metadata = chunk.metadata
+        content = chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
+        
+        return jsonify({
+            'success': True,
+            'file_id': file_id,
+            'table_index': index,
+            'markdown_table': content,
+            'analysis': metadata.get('analysis', ''),
+            'metadata': {
+                'rows': metadata.get('rows', 0),
+                'columns': metadata.get('columns', 0),
+                'table_structure': metadata.get('table_structure', {}),
+                'column_details': metadata.get('column_details', []),
+                'relationships': metadata.get('relationships', []),
+                'patterns_insights': metadata.get('patterns_insights', []),
+                'data_quality': metadata.get('data_quality', {}),
+                'suggested_visualizations': metadata.get('suggested_visualizations', []),
+                'potential_use_cases': metadata.get('potential_use_cases', []),
+                'confidence_scores': metadata.get('confidence_scores', {}),
+                'has_numeric_data': metadata.get('has_numeric_data', False),
+                'has_date_data': metadata.get('has_date_data', False),
+                'key_columns': metadata.get('key_columns', []),
+                'page_number': metadata.get('page_number', 1)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Table content error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/multimodal/audio/<file_id>/<int:segment_index>', methods=['GET'])
+def get_audio_content(file_id, segment_index):
+    """Serve audio segment data with timestamps and speaker info."""
+    try:
+        if not app_state.is_initialized:
+            return jsonify({'success': False, 'error': 'Application not initialized'}), 400
+        
+        if file_id not in app_state.uploaded_files:
+            return jsonify({'success': False, 'error': f'File {file_id} not found'}), 404
+        
+        # Find audio chunks
+        all_docs = app_state.vector_store.documents
+        audio_chunks = [
+            doc for doc in all_docs 
+            if hasattr(doc, 'metadata') and 
+               doc.metadata.get('document_id') == file_id and
+               doc.metadata.get('element_type', doc.metadata.get('chunk_type')) == 'audio'
+        ]
+        
+        if segment_index >= len(audio_chunks):
+            return jsonify({'success': False, 'error': f'Segment index {segment_index} out of range (found {len(audio_chunks)} segments)'}), 404
+        
+        chunk = audio_chunks[segment_index]
+        metadata = chunk.metadata
+        content = chunk.page_content if hasattr(chunk, 'page_content') else str(chunk)
+        
+        # Check if this is the full transcript chunk
+        is_full_transcript = metadata.get('is_full_transcript', False)
+        
+        response = {
+            'success': True,
+            'file_id': file_id,
+            'segment_index': segment_index,
+            'is_full_transcript': is_full_transcript,
+            'content': content,
+            'metadata': {
+                'timestamp': metadata.get('timestamp_str', ''),
+                'timestamp_seconds': metadata.get('timestamp', 0),
+                'speaker': metadata.get('speaker', 'Unknown'),
+                'tone': metadata.get('tone', 'neutral'),
+                'confidence': metadata.get('confidence', 0.8),
+                'word_count': metadata.get('word_count', 0),
+                'is_speaker_change': metadata.get('is_speaker_change', False)
+            }
+        }
+        
+        # Add full transcript metadata if available
+        if is_full_transcript:
+            response['metadata']['unique_speakers'] = metadata.get('unique_speakers', [])
+            response['metadata']['diarization_success'] = metadata.get('diarization_success', False)
+            response['metadata']['audio_quality'] = metadata.get('audio_quality', 'unknown')
+            response['metadata']['background_noise'] = metadata.get('background_noise', 'none detected')
+            response['metadata']['language_detected'] = metadata.get('language_detected', 'unknown')
+            response['metadata']['estimated_speakers'] = metadata.get('estimated_speakers', 1)
+            response['metadata']['speech_rate_wpm'] = metadata.get('speech_rate_wpm', 0.0)
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Audio content error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
 if __name__ == '__main__':
-    # Initialize on startup
-    app_state.initialize()
+    # Initialize on startup (only once, not on reloader)
+    if not app_state.is_initialized:
+        app_state.initialize()
     
-    # Run Flask
+    # Run Flask (disable reloader to prevent double initialization issues)
     app.run(
         host='0.0.0.0',
         port=5000,
-        debug=True
+        debug=True,
+        use_reloader=False
     )

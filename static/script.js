@@ -380,9 +380,9 @@ function showWelcomeMessage() {
     addMessage('ai', `> welcome to CPT_S 421 VTA Document RAG
 
 supported operations:
-  - upload: PDF, DOCX, TXT files
+  - upload: PDF, DOCX, TXT, Images, Audio (MP3, WAV, M4A, OGG, FLAC...)
   - query: ask questions about document content
-  - citations: sources shown with page numbers
+  - citations: sources shown with page numbers, timestamps, speakers
 
 type your question below and press enter.`);
 }
@@ -499,6 +499,35 @@ function renderImageCitation(citation, index, scorePercent) {
     `;
 }
 
+function renderAudioCitation(citation, index, scorePercent) {
+    const speaker = citation.speaker || 'Unknown';
+    const timestamp = citation.timestamp || '';
+    const tone = citation.tone || 'neutral';
+    const confidence = citation.transcription_confidence;
+    const verbatim = citation.verbatim || '';
+    
+    let metaParts = [];
+    if (timestamp) metaParts.push(`at ${escapeHtml(timestamp)}`);
+    if (speaker && speaker !== 'Unknown') metaParts.push(escapeHtml(speaker));
+    if (tone && tone !== 'neutral') metaParts.push(`tone: ${escapeHtml(tone)}`);
+    if (confidence) metaParts.push(`confidence: ${(confidence * 100).toFixed(0)}%`);
+    
+    const metaStr = metaParts.length > 0 ? `<div class="citation-audio-meta">${metaParts.join(' | ')}</div>` : '';
+    
+    return `
+        <div class="citation-item audio-citation">
+            <div class="citation-header">
+                <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
+                <span class="citation-type-badge audio-badge">AUDIO</span>
+                <span class="citation-match">${scorePercent}%</span>
+            </div>
+            <div class="citation-loc">${escapeHtml(citation.location)}</div>
+            ${metaStr}
+            <div class="citation-text">"${escapeHtml(verbatim)}"</div>
+        </div>
+    `;
+}
+
 function addMessageWithCitations(type, content, citations = []) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
@@ -523,6 +552,8 @@ function addMessageWithCitations(type, content, citations = []) {
                 citationHtml = renderTableCitation(citation, index, scorePercent);
             } else if (sourceType === 'image') {
                 citationHtml = renderImageCitation(citation, index, scorePercent);
+            } else if (sourceType === 'audio') {
+                citationHtml = renderAudioCitation(citation, index, scorePercent);
             } else {
                 // Standard text citation
                 citationHtml = `
