@@ -43,7 +43,7 @@ except ImportError:
 
 # PDF processing
 try:
-    import PyMuPDF
+    import fitz  # PyMuPDF
     PYMUPDF_AVAILABLE = True
 except ImportError:
     PYMUPDF_AVAILABLE = False
@@ -1155,7 +1155,7 @@ class UnifiedDocumentProcessor:
         tables = []
         
         try:
-            doc = PyMuPDF.open(file_path)
+            doc = fitz.open(file_path)
             
             logger.info(f"Processing PDF: {filename} ({len(doc)} pages)")
             
@@ -1236,7 +1236,7 @@ class UnifiedDocumentProcessor:
                         try:
                             # Extract image bytes
                             xref = img[0]
-                            pix = page.get_pixmap(matrix=PyMuPDF.Matrix(2, 2), clip=page.rect)
+                            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=page.rect)
                             img_data = pix.tobytes('png')
                             
                             if len(img_data) > 500:  # Skip tiny images

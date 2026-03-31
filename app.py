@@ -1244,12 +1244,37 @@ def process_with_unified_processor(file_path: str, file_id: str) -> Dict[str, An
     try:
         logger.info(f"Processing with unified Gemini processor: {file_path}")
         
+        # Get extracted images directory
+        extracted_images_dir = app.config.get('EXTRACTED_IMAGES_DIR')
+        
         # Process the file
         processed_doc = unified_processor.process_file(file_path, extract_images=True)
         
         if not processed_doc or not processed_doc.chunks:
             result['error'] = "No content extracted from file"
             return result
+        
+        # Save images to disk for display in sources - store mapping for metadata
+        image_path_map = {}  # chunk_index -> image_path
+        image_counter = 0
+        for chunk_idx, chunk in enumerate(processed_doc.chunks):
+            if chunk.chunk_type == 'image' and chunk.image_data:
+                try:
+                    import base64
+                    # Decode base64 image data
+                    img_bytes = base64.b64decode(chunk.image_data)
+                    # Create unique filename using chunk_idx for consistency
+                    image_counter += 1
+                    img_filename = f"{chunk.document_id}_page{chunk.page_number or 1}_img{image_counter}.png"
+                    img_path = os.path.join(extracted_images_dir, img_filename)
+                    # Save to disk
+                    with open(img_path, 'wb') as f:
+                        f.write(img_bytes)
+                    # Store the path for later use in metadata
+                    image_path_map[chunk_idx] = img_filename
+                    logger.info(f"Saved image: {img_filename}")
+                except Exception as img_error:
+                    logger.warning(f"Failed to save image: {img_error}")
         
         # Convert chunks to format for vector store
         # We need to create simple document objects
@@ -1272,6 +1297,10 @@ def process_with_unified_processor(file_path: str, file_id: str) -> Dict[str, An
                 'page_number': chunk.page_number or 1
             }
             
+            # Debug: log image chunks
+            if chunk.chunk_type == 'image':
+                logger.info(f"IMAGE CHUNK: page={chunk.page_number}, content_preview={chunk.content[:100]}...")
+            
             # Add type-specific metadata
             if chunk.chunk_type == 'image':
                 meta['element_type'] = 'image'
@@ -1279,6 +1308,15 @@ def process_with_unified_processor(file_path: str, file_id: str) -> Dict[str, An
                 meta['image_keywords'] = chunk.metadata.get('keywords', [])
                 if chunk.image_data:
                     meta['has_image_data'] = True
+                    # Use the saved image path from the map (key is current document count)
+                    current_idx = len(documents)
+                    if current_idx in image_path_map:
+                        meta['image_path'] = os.path.join(extracted_images_dir, image_path_map[current_idx])
+                    else:
+                        # Fallback: generate filename
+                        img_filename = f"{chunk.document_id}_page{chunk.page_number or 1}_img{current_idx+1}.png"
+                        meta['image_path'] = os.path.join(extracted_images_dir, img_filename)
+                    meta['element_id'] = f"{chunk.document_id}_page{chunk.page_number or 1}"
                 # Enhanced image metadata
                 meta['description'] = chunk.metadata.get('description', '')
                 meta['chart_type'] = chunk.metadata.get('chart_type', 'unknown')
@@ -1355,6 +1393,14 @@ def process_with_unified_processor(file_path: str, file_id: str) -> Dict[str, An
         # Add to vector store
         app_state.vector_store.add_documents(documents, embeddings, metadatas)
         
+        # Debug: log document counts by type
+        type_counts = {'text': 0, 'table': 0, 'image': 0, 'audio': 0}
+        for m in metadatas:
+            ct = m.get('chunk_type', 'text')
+            if ct in type_counts:
+                type_counts[ct] += 1
+        logger.info(f"Documents added to vector store: {type_counts}")
+        
         # Count elements
         element_counts = {'text': 0, 'table': 0, 'image': 0, 'audio': 0}
         for chunk in processed_doc.chunks:
@@ -1410,16 +1456,7 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
         
         documents = []
         
-        # Use unified Gemini processor if available (for PDF, DOCX, audio)
-        if UNIFIED_PROCESSOR_AVAILABLE and file_ext in ['pdf', 'docx', 'mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'aiff', 'opus', 'webm', 'amr', '3gp', 'midi', 'mid', 'ra', 'ram', 'mp2', 'ac3', 'mp4', 'm4b', 'm4p', 'oga']:
-            try:
-                logger.info(f"Processing {file_ext} with unified Gemini processor: {file_path}")
-                return process_with_unified_processor(file_path, file_id)
-            except Exception as unified_error:
-                logger.error(f"Unified processor failed, falling back to basic: {unified_error}")
-                # Continue to basic processing below
-        
-        # Basic processing (fallback or for text files)
+        # Use multimodal chunker (original working path) for PDFs
         if file_ext == 'pdf':
             # Use multimodal processing if available and enabled, otherwise fallback to basic
             if MULTIMODAL_AVAILABLE and app.config.get('USE_MULTIMODAL_PDF', True):
@@ -1435,6 +1472,14 @@ def process_uploaded_file(file_path: str, file_id: str) -> Dict[str, Any]:
                 documents = app_state.document_processor.load_document(file_path)
                 
         elif file_ext == 'docx':
+            # Use unified processor for DOCX if available
+            if UNIFIED_PROCESSOR_AVAILABLE:
+                try:
+                    logger.info(f"Processing DOCX with unified Gemini processor: {file_path}")
+                    return process_with_unified_processor(file_path, file_id)
+                except Exception as unified_error:
+                    logger.error(f"Unified processor failed, falling back to basic: {unified_error}")
+            
             logger.info(f"Processing DOCX: {file_path}")
             documents = app_state.document_processor.load_document(file_path)
             
@@ -1703,6 +1748,34 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
             query_embedding=query_embedding,
             k=initial_k
         )
+        
+        # Debug: log search result types
+        result_types = {'text': 0, 'table': 0, 'image': 0, 'audio': 0}
+        for doc in search_results:
+            et = doc.metadata.get('element_type', doc.metadata.get('chunk_type', 'text'))
+            if et in result_types:
+                result_types[et] += 1
+        logger.info(f"Search results types: {result_types}")
+        
+        # Force-include image results if any exist in vector store
+        all_docs = app_state.vector_store.documents
+        image_docs = [d for d in all_docs if d.metadata.get('element_type') == 'image' or d.metadata.get('chunk_type') == 'image']
+        
+        logger.info(f"Total docs in store: {len(all_docs)}, Image docs: {len(image_docs)}")
+        
+        if image_docs:
+            # Get all non-image results
+            non_image_results = [d for d in search_results if d.metadata.get('element_type') != 'image' and d.metadata.get('chunk_type') != 'image']
+            
+            # Replace some text results with images if no images in results
+            if not any(d.metadata.get('element_type') == 'image' for d in search_results):
+                logger.info(f"Adding {min(len(image_docs), 2)} image results to search results")
+                # Replace lowest-scoring non-image with images
+                for img_doc in image_docs[:2]:  # Add up to 2 images
+                    # Give it a reasonable score
+                    img_doc.metadata['similarity_score'] = 0.5
+                    img_doc.metadata['relevance_score'] = 0.5
+                    search_results.append(img_doc)
         
         if not search_results:
             result['answer'] = "No documents found. Please upload documents first."
