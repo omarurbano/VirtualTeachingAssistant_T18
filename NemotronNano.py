@@ -1,5 +1,4 @@
 from urllib import response
-
 import requests
 import os
 import base64
@@ -7,118 +6,246 @@ import sys
 from dotenv import load_dotenv
 
 
-load_dotenv()
 
-api_key = os.getenv("NM_API_KEY")
+class VisionModel():
+    def __init__(self):
+        load_dotenv()
+        self.__api_key = os.getenv("NM_API_KEY")
+        self.__invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
+        self.stream = False
+        self.SupportedList = {
+            "png": ["image/png", "image_url"],
+            "jpg": ["image/jpeg", "image_url"],
+            "jpeg": ["image/jpeg", "image_url"],
+            "webp": ["image/webp", "image_url"],
+            "mp4": ["video/mp4", "video_url"],
+            "webm": ["video/webm", "video_url"],
+            "mov": ["video/mov", "video_url"]
+            }
+        self.query = ""
+    
+    def get_extension(self, filename):
+        _, ext = os.path.splitext(filename)
+        ext = ext[1:].lower()
+        return ext
+    
+    def mime_type(self, ext):
+        return self.SupportedList[ext][0]
+    
+    def media_type(self, ext):
+        return self.SupportedList[ext][1]
+    
+    def encode_media_base64(self, media_file):
+        """Encode media file to base64 string"""
+        with open(media_file, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+        
+    def update_query(self, newQuery):
+        self.query = newQuery
+    
+    def get_query(self):
+        return self.query
+        
+    def chat_with_media_helper(self, mediafiles, query, stream):
+        return self.chat_with_media(self.__invoke_url, mediafiles, query, stream)
+    
+    def chat_with_media(self, infer_url, media_files, query, stream):
+        assert isinstance(media_files, list), f"{media_files}"
+        
+        has_video = False
+        
+        # Build content based on whether we have media files
+        if len(media_files) == 0:
+            # Text-only mode
+            content = query
+        else:
+            # Build content array with text and media
+            content = [{"type": "text", "text": query}]
+            
+            for media_file in media_files:
+                ext = self.get_extension(media_file)
+                assert ext in self.SupportedList, f"{media_file} format is not supported"
+                
+                media_type_key = self.media_type(ext)
+                if media_type_key == "video_url":
+                    has_video = True
+                
+                print(f"Encoding {media_file} as base64...")
+                base64_data = self.encode_media_base64(media_file)
+                
+                # Add media to content array
+                media_obj = {
+                    "type": media_type_key,
+                    media_type_key: {
+                        "url": f"data:{self.mime_type(ext)};base64,{base64_data}"
+                    }
+                }
+                content.append(media_obj)
+            
+            if has_video:
+                assert len(media_files) == 1, "Only single video supported."
+        
+        headers = {
+            "Authorization": f"Bearer {self.__api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if stream:
+            headers["Accept"] = "text/event-stream"
+
+        # Add system message with appropriate prompt
+        # Videos only support /no_think, images support both
+        
+        system_prompt = "/no_think" if has_video else "/think"
+        
+        
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": content,
+            }
+        ]
+        payload = {
+            "max_tokens": 4096,
+            "temperature": 1,
+            "top_p": 1,
+            "frequency_penalty": 0,
+            "presence_penalty": 0,
+            "messages": messages,
+            "stream": stream,
+            #"model": "nvidia/nemotron-nano-12b-v2-vl",
+            "model": "meta/llama-4-maverick-17b-128e-instruct", #If Nemotron Nano is not working, can switch to this model which also supports vision inputs
+        }
+
+        response = requests.post(infer_url, headers=headers, json=payload, stream=stream)
+        return response
+
+    #Call NemotronNano with image path to get description of image, which will be used as metadata in 
+    #vector database at insertion
+    def GetSingleImgDesc(self, path):
+        query = "Describe in detail what you see in the image."
+        # res = chat_with_media(invoke_url, [path], query, stream=False)
+        res = self.chat_with_media_helper([path], query, stream=False)
+        return res.json()["choices"][0]['message']['content']
+    
 
 
-invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
-stream = False
-query = "Describe in detail what you see in the image."
+# load_dotenv()
 
-kApiKey = api_key
+# api_key = os.getenv("NM_API_KEY")
 
-# ext: {mime, media_type}
-kSupportedList = {
-   "png": ["image/png", "image_url"],
-   "jpg": ["image/jpeg", "image_url"],
-   "jpeg": ["image/jpeg", "image_url"],
-   "webp": ["image/webp", "image_url"],
-   "mp4": ["video/mp4", "video_url"],
-   "webm": ["video/webm", "video_url"],
-   "mov": ["video/mov", "video_url"]
-}
 
-def get_extension(filename):
-   _, ext = os.path.splitext(filename)
-   ext = ext[1:].lower()
-   return ext
+# invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
+# stream = False
+# query = "Describe in detail what you see in the image."
 
-def mime_type(ext):
-   return kSupportedList[ext][0]
+# kApiKey = api_key
 
-def media_type(ext):
-   return kSupportedList[ext][1]
+# # ext: {mime, media_type}
+# kSupportedList = {
+#    "png": ["image/png", "image_url"],
+#    "jpg": ["image/jpeg", "image_url"],
+#    "jpeg": ["image/jpeg", "image_url"],
+#    "webp": ["image/webp", "image_url"],
+#    "mp4": ["video/mp4", "video_url"],
+#    "webm": ["video/webm", "video_url"],
+#    "mov": ["video/mov", "video_url"]
+# }
 
-def encode_media_base64(media_file):
-   """Encode media file to base64 string"""
-   with open(media_file, "rb") as f:
-       return base64.b64encode(f.read()).decode("utf-8")
+# def get_extension(filename):
+#    _, ext = os.path.splitext(filename)
+#    ext = ext[1:].lower()
+#    return ext
 
-def chat_with_media(infer_url, media_files, query: str, stream: bool = False):
-   assert isinstance(media_files, list), f"{media_files}"
+# def mime_type(ext):
+#    return kSupportedList[ext][0]
+
+# def media_type(ext):
+#    return kSupportedList[ext][1]
+
+# def encode_media_base64(media_file):
+#    """Encode media file to base64 string"""
+#    with open(media_file, "rb") as f:
+#        return base64.b64encode(f.read()).decode("utf-8")
+
+# def chat_with_media(infer_url, media_files, query: str, stream: bool = False):
+#    assert isinstance(media_files, list), f"{media_files}"
   
-   has_video = False
+#    has_video = False
   
-   # Build content based on whether we have media files
-   if len(media_files) == 0:
-       # Text-only mode
-       content = query
-   else:
-       # Build content array with text and media
-       content = [{"type": "text", "text": query}]
+#    # Build content based on whether we have media files
+#    if len(media_files) == 0:
+#        # Text-only mode
+#        content = query
+#    else:
+#        # Build content array with text and media
+#        content = [{"type": "text", "text": query}]
       
-       for media_file in media_files:
-           ext = get_extension(media_file)
-           assert ext in kSupportedList, f"{media_file} format is not supported"
+#        for media_file in media_files:
+#            ext = get_extension(media_file)
+#            assert ext in kSupportedList, f"{media_file} format is not supported"
           
-           media_type_key = media_type(ext)
-           if media_type_key == "video_url":
-               has_video = True
+#            media_type_key = media_type(ext)
+#            if media_type_key == "video_url":
+#                has_video = True
           
-           print(f"Encoding {media_file} as base64...")
-           base64_data = encode_media_base64(media_file)
+#            print(f"Encoding {media_file} as base64...")
+#            base64_data = encode_media_base64(media_file)
           
-           # Add media to content array
-           media_obj = {
-               "type": media_type_key,
-               media_type_key: {
-                   "url": f"data:{mime_type(ext)};base64,{base64_data}"
-               }
-           }
-           content.append(media_obj)
+#            # Add media to content array
+#            media_obj = {
+#                "type": media_type_key,
+#                media_type_key: {
+#                    "url": f"data:{mime_type(ext)};base64,{base64_data}"
+#                }
+#            }
+#            content.append(media_obj)
       
-       if has_video:
-           assert len(media_files) == 1, "Only single video supported."
+#        if has_video:
+#            assert len(media_files) == 1, "Only single video supported."
   
-   headers = {
-       "Authorization": f"Bearer {kApiKey}",
-       "Content-Type": "application/json",
-       "Accept": "application/json",
-   }
-   if stream:
-       headers["Accept"] = "text/event-stream"
+#    headers = {
+#        "Authorization": f"Bearer {kApiKey}",
+#        "Content-Type": "application/json",
+#        "Accept": "application/json",
+#    }
+#    if stream:
+#        headers["Accept"] = "text/event-stream"
 
-   # Add system message with appropriate prompt
-   # Videos only support /no_think, images support both
+#    # Add system message with appropriate prompt
+#    # Videos only support /no_think, images support both
   
-   system_prompt = "/no_think" if has_video else "/think"
+#    system_prompt = "/no_think" if has_video else "/think"
   
   
-   messages = [
-       {
-           "role": "system",
-           "content": system_prompt,
-       },
-       {
-           "role": "user",
-           "content": content,
-       }
-   ]
-   payload = {
-       "max_tokens": 4096,
-       "temperature": 1,
-       "top_p": 1,
-       "frequency_penalty": 0,
-       "presence_penalty": 0,
-       "messages": messages,
-       "stream": stream,
-    #    "model": "nvidia/nemotron-nano-12b-v2-vl",
-        "model": "meta/llama-4-maverick-17b-128e-instruct", #If Nemotron Nano is not working, can switch to this model which also supports vision inputs
-   }
+#    messages = [
+#        {
+#            "role": "system",
+#            "content": system_prompt,
+#        },
+#        {
+#            "role": "user",
+#            "content": content,
+#        }
+#    ]
+#    payload = {
+#        "max_tokens": 4096,
+#        "temperature": 1,
+#        "top_p": 1,
+#        "frequency_penalty": 0,
+#        "presence_penalty": 0,
+#        "messages": messages,
+#        "stream": stream,
+#     #    "model": "nvidia/nemotron-nano-12b-v2-vl",
+#         "model": "meta/llama-4-maverick-17b-128e-instruct", #If Nemotron Nano is not working, can switch to this model which also supports vision inputs
+#    }
 
-   response = requests.post(infer_url, headers=headers, json=payload, stream=stream)
-   return response
+#    response = requests.post(infer_url, headers=headers, json=payload, stream=stream)
+#    return response
 
     
 
@@ -130,4 +257,8 @@ if __name__ == "__main__":
    """
 
    media_samples = list(sys.argv[1:])
-   chat_with_media(invoke_url, media_samples, query, stream)
+   vs = VisionModel()
+   res = vs.chat_with_media_helper(media_samples, "Tell me what you see?", False)
+   print(res.json()["choices"][0]['message']['content'])
+#    vs.chat_with_media(media_samples, )
+#    chat_with_media(invoke_url, media_samples, query, stream)

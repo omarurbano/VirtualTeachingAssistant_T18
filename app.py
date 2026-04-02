@@ -16,6 +16,7 @@ import hashlib
 import re
 from datetime import datetime
 from typing import List, Dict, Optional, Any, Tuple
+from NemotronNano import *
 
 # Flask imports
 from flask import Flask, request, jsonify, render_template, send_from_directory
@@ -795,6 +796,30 @@ def clear_all():
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/image', methods=['GET'])
+def answerimagequery():
+    files = []
+    for file_id, info in app_state.uploaded_files.items():
+            files.append({
+                'file_id': file_id,
+                'filename': info['filename'],
+                'file_type': info['file_type'].replace('.', ''),
+                'chunks': info['chunks'],
+                'upload_time': info['upload_time']
+            })
+   
+    vs = VisionModel()
+    full_path = os.path.abspath(os.path.join(app.config['UPLOAD_FOLDER'], 'butchCoug.jpg'))
+    
+    result = vs.GetSingleImgDesc(full_path)
+    
+    return jsonify({
+        'message': result})
+
+
+    # return jsonify("Test")
+   
 
 
 # ============================================================================
