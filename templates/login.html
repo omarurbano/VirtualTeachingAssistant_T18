@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPT_S 421 VTA - Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* ================================================================
+           AUTH PAGE - Terminal Login/Register
+           Reuses all CSS variables and design tokens from style.css
+           ================================================================ */
+
+        .auth-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .auth-container {
+            width: 100%;
+            max-width: 440px;
+            animation: authFadeIn 0.4s ease;
+        }
+
+        @keyframes authFadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Terminal Window ─────────────────────────────────────── */
+        .terminal-window {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), var(--shadow-glow);
+        }
+
+        /* ── Terminal Title Bar ──────────────────────────────────── */
+        .terminal-titlebar {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-subtle);
+            gap: 12px;
+        }
+
+        .terminal-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .terminal-dots span {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--border-subtle);
+        }
+
+        .terminal-dots span:nth-child(1) { background: #ff5f56; }
+        .terminal-dots span:nth-child(2) { background: #ffbd2e; }
+        .terminal-dots span:nth-child(3) { background: #27c93f; }
+
+        .terminal-title {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            flex: 1;
+            text-align: center;
+        }
+
+        /* ── Logo Area ───────────────────────────────────────────── */
+        .auth-logo {
+            text-align: center;
+            padding: 32px 24px 0;
+        }
+
+        .auth-logo .ascii-art {
+            font-family: var(--font-mono);
+            font-size: 0.55rem;
+            line-height: 1.25;
+            color: var(--accent-primary);
+            white-space: pre;
+            opacity: 0.6;
+            margin-bottom: 16px;
+            display: inline-block;
+            text-align: left;
+        }
+
+        .auth-logo h1 {
+            font-family: var(--font-mono);
+            font-size: 1.1rem;
+            color: var(--text-bright);
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .auth-logo h1 span {
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+
+        .auth-logo p {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        /* ── Tab Switcher ────────────────────────────────────────── */
+        .auth-tabs {
+            display: flex;
+            margin: 24px 24px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 10px 0;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .auth-tab:hover {
+            color: var(--text-main);
+        }
+
+        .auth-tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+
+        .auth-tab .tab-prompt {
+            color: var(--accent-secondary);
+            font-size: 0.75rem;
+        }
+
+        /* ── Form Panel ──────────────────────────────────────────── */
+        .auth-panel {
+            padding: 24px;
+            display: none;
+        }
+
+        .auth-panel.active {
+            display: block;
+        }
+
+        /* Terminal-style input group */
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+        .input-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+
+        .input-label .label-prompt {
+            color: var(--accent-secondary);
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            color: var(--text-bright);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .input-field::placeholder {
+            color: var(--text-dim);
+        }
+
+        .input-field:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        /* ── Role Selector ───────────────────────────────────────── */
+        .role-group {
+            margin-bottom: 16px;
+        }
+
+        .role-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+
+        .role-label .label-prompt {
+            color: var(--accent-secondary);
+        }
+
+        .role-options {
+            display: flex;
+            gap: 12px;
+        }
+
+        .role-option {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-main);
+        }
+
+        .role-option:hover {
+            border-color: var(--text-dim);
+        }
+
+        .role-option input[type="radio"] {
+            display: none;
+        }
+
+        .role-option input[type="radio"]:checked + span {
+            color: var(--accent-primary);
+        }
+
+        .role-option:has(input:checked) {
+            border-color: var(--accent-primary);
+            background: rgba(0, 217, 255, 0.05);
+            box-shadow: 0 0 0 1px var(--accent-glow);
+        }
+
+        .role-option .role-icon {
+            font-size: 1rem;
+        }
+
+        /* ── Submit Button ───────────────────────────────────────── */
+        .auth-submit {
+            width: 100%;
+            padding: 12px;
+            margin-top: 8px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--accent-primary);
+            border-radius: var(--radius-md);
+            color: var(--accent-primary);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .auth-submit:hover {
+            background: rgba(0, 217, 255, 0.1);
+            box-shadow: var(--shadow-glow);
+            transform: translateY(-1px);
+        }
+
+        .auth-submit:active {
+            transform: translateY(0);
+        }
+
+        .auth-submit .btn-prompt {
+            color: var(--accent-secondary);
+        }
+
+        .auth-submit:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* ── Status Messages ─────────────────────────────────────── */
+        .auth-status {
+            margin-top: 16px;
+            padding: 10px 14px;
+            border-radius: var(--radius-md);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .auth-status.error {
+            display: flex;
+            background: rgba(255, 107, 157, 0.08);
+            border: 1px solid rgba(255, 107, 157, 0.2);
+            color: var(--accent-tertiary);
+        }
+
+        .auth-status.success {
+            display: flex;
+            background: rgba(0, 255, 157, 0.08);
+            border: 1px solid rgba(0, 255, 157, 0.2);
+            color: var(--accent-secondary);
+        }
+
+        .auth-status.loading {
+            display: flex;
+            background: rgba(0, 217, 255, 0.05);
+            border: 1px solid rgba(0, 217, 255, 0.15);
+            color: var(--accent-primary);
+        }
+
+        .status-prefix {
+            color: var(--accent-secondary);
+        }
+
+        /* ── Footer ──────────────────────────────────────────────── */
+        .auth-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-subtle);
+            text-align: center;
+        }
+
+        .auth-footer p {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .auth-footer a {
+            color: var(--accent-primary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .auth-footer a:hover {
+            color: var(--accent-secondary);
+        }
+
+        /* ── Divider ─────────────────────────────────────────────── */
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 20px 0;
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .auth-divider::before,
+        .auth-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-subtle);
+        }
+
+        /* ── Loading Spinner ─────────────────────────────────────── */
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border-subtle);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ── Responsive ──────────────────────────────────────────── */
+        @media (max-width: 480px) {
+            .auth-container {
+                max-width: 100%;
+            }
+
+            .auth-logo .ascii-art {
+                font-size: 0.4rem;
+            }
+
+            .role-options {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-wrapper">
+        <div class="auth-container">
+            <div class="terminal-window">
+
+                <!-- Terminal Title Bar -->
+                <div class="terminal-titlebar">
+                    <div class="terminal-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span class="terminal-title">vta@cpts421:~</span>
+                </div>
+
+                <!-- Logo -->
+                <div class="auth-logo">
+                    <pre class="ascii-art">
+╔═══════════════════════════════════════════╗
+║  ██╗   ██╗████████╗ █████╗               ║
+║  ██║   ██║╚══██╔══╝██╔══██╗              ║
+║  ██║   ██║   ██║   ███████║              ║
+║  ╚██╗ ██╔╝   ██║   ██╔══██║              ║
+║   ╚████╔╝    ██║   ██║  ██║              ║
+║    ╚═══╝     ╚═╝   ╚═╝  ╚═╝              ║
+║  Virtual Teaching Assistant               ║
+║  CPT_S 421 · Document RAG System          ║
+╚═══════════════════════════════════════════╝</pre>
+                    <h1><span>></span> Virtual Teaching Assistant</h1>
+                    <p>// sign in to access course materials</p>
+                </div>
+
+                <!-- Tab Switcher -->
+                <div class="auth-tabs">
+                    <button class="auth-tab active" id="tabSignin" onclick="switchTab('signin')">
+                        <span class="tab-prompt">$</span> sign in
+                    </button>
+                    <button class="auth-tab" id="tabSignup" onclick="switchTab('signup')">
+                        <span class="tab-prompt">$</span> sign up
+                    </button>
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════
+                     SIGN IN PANEL
+                     ═══════════════════════════════════════════════════ -->
+                <div class="auth-panel active" id="panelSignin">
+                    <form id="signinForm" onsubmit="handleSignin(event)">
+                        <div class="input-group">
+                            <label class="input-label" for="signinEmail">
+                                <span class="label-prompt">→</span> email
+                            </label>
+                            <input
+                                type="email"
+                                id="signinEmail"
+                                class="input-field"
+                                placeholder="user@university.edu"
+                                required
+                                autocomplete="email"
+                                spellcheck="false"
+                            >
+                        </div>
+
+                        <div class="input-group">
+                            <label class="input-label" for="signinPassword">
+                                <span class="label-prompt">→</span> password
+                            </label>
+                            <input
+                                type="password"
+                                id="signinPassword"
+                                class="input-field"
+                                placeholder="••••••••"
+                                required
+                                autocomplete="current-password"
+                            >
+                        </div>
+
+                        <button type="submit" class="auth-submit" id="signinBtn">
+                            <span class="btn-prompt">$</span> sign in
+                        </button>
+                    </form>
+
+                    <div class="auth-status" id="signinStatus"></div>
+
+                    <div class="auth-divider">or</div>
+
+                    <div class="auth-footer">
+                        <p>don't have an account? <a href="#" onclick="switchTab('signup'); return false;">create one</a></p>
+                    </div>
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════
+                     SIGN UP PANEL
+                     ═══════════════════════════════════════════════════ -->
+                <div class="auth-panel" id="panelSignup">
+                    <form id="signupForm" onsubmit="handleSignup(event)">
+                        <div class="input-group">
+                            <label class="input-label" for="signupName">
+                                <span class="label-prompt">→</span> full name
+                            </label>
+                            <input
+                                type="text"
+                                id="signupName"
+                                class="input-field"
+                                placeholder="John Smith"
+                                required
+                                autocomplete="name"
+                                spellcheck="false"
+                            >
+                        </div>
+
+                        <div class="input-group">
+                            <label class="input-label" for="signupEmail">
+                                <span class="label-prompt">→</span> email
+                            </label>
+                            <input
+                                type="email"
+                                id="signupEmail"
+                                class="input-field"
+                                placeholder="user@university.edu"
+                                required
+                                autocomplete="email"
+                                spellcheck="false"
+                            >
+                        </div>
+
+                        <div class="input-group">
+                            <label class="input-label" for="signupPassword">
+                                <span class="label-prompt">→</span> password
+                            </label>
+                            <input
+                                type="password"
+                                id="signupPassword"
+                                class="input-field"
+                                placeholder="min 6 characters"
+                                required
+                                minlength="6"
+                                autocomplete="new-password"
+                            >
+                        </div>
+
+                        <div class="input-group">
+                            <label class="input-label" for="signupConfirm">
+                                <span class="label-prompt">→</span> confirm password
+                            </label>
+                            <input
+                                type="password"
+                                id="signupConfirm"
+                                class="input-field"
+                                placeholder="••••••••"
+                                required
+                                minlength="6"
+                                autocomplete="new-password"
+                            >
+                        </div>
+
+                        <div class="role-group">
+                            <label class="role-label">
+                                <span class="label-prompt">→</span> i am a
+                            </label>
+                            <div class="role-options">
+                                <label class="role-option">
+                                    <input type="radio" name="role" value="student" checked>
+                                    <span class="role-icon">🎓</span>
+                                    <span>student</span>
+                                </label>
+                                <label class="role-option">
+                                    <input type="radio" name="role" value="teacher">
+                                    <span class="role-icon">👨‍🏫</span>
+                                    <span>teacher</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="auth-submit" id="signupBtn">
+                            <span class="btn-prompt">$</span> create account
+                        </button>
+                    </form>
+
+                    <div class="auth-status" id="signupStatus"></div>
+
+                    <div class="auth-divider">or</div>
+
+                    <div class="auth-footer">
+                        <p>already have an account? <a href="#" onclick="switchTab('signin'); return false;">sign in</a></p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── Tab Switching ─────────────────────────────────────────
+        function switchTab(tab) {
+            const panelSignin = document.getElementById('panelSignin');
+            const panelSignup = document.getElementById('panelSignup');
+            const tabSignin = document.getElementById('tabSignin');
+            const tabSignup = document.getElementById('tabSignup');
+
+            // Clear any status messages
+            clearStatus('signinStatus');
+            clearStatus('signupStatus');
+
+            if (tab === 'signin') {
+                panelSignin.classList.add('active');
+                panelSignup.classList.remove('active');
+                tabSignin.classList.add('active');
+                tabSignup.classList.remove('active');
+            } else {
+                panelSignup.classList.add('active');
+                panelSignin.classList.remove('active');
+                tabSignup.classList.add('active');
+                tabSignin.classList.remove('active');
+            }
+        }
+
+        // ── Status Helpers ────────────────────────────────────────
+        function showStatus(elementId, type, message) {
+            const el = document.getElementById(elementId);
+            el.className = 'auth-status ' + type;
+            const prefix = type === 'error' ? '✗' : type === 'success' ? '✓' : '→';
+            el.innerHTML = `<span class="status-prefix">${prefix}</span> ${message}`;
+        }
+
+        function clearStatus(elementId) {
+            const el = document.getElementById(elementId);
+            el.className = 'auth-status';
+            el.innerHTML = '';
+        }
+
+        // ── Sign In Handler ───────────────────────────────────────
+        async function handleSignin(event) {
+            event.preventDefault();
+
+            const btn = document.getElementById('signinBtn');
+            const email = document.getElementById('signinEmail').value.trim();
+            const password = document.getElementById('signinPassword').value;
+
+            if (!email || !password) {
+                showStatus('signinStatus', 'error', 'email and password are required');
+                return;
+            }
+
+            // Show loading state
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> signing in...';
+            showStatus('signinStatus', 'loading', 'authenticating...');
+
+            try {
+                const res = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    showStatus('signinStatus', 'success', `welcome back, ${data.user.full_name || data.user.email}`);
+                    // Redirect to main app after brief delay
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 600);
+                } else {
+                    showStatus('signinStatus', 'error', data.error || 'login failed');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span class="btn-prompt">$</span> sign in';
+                }
+            } catch (err) {
+                showStatus('signinStatus', 'error', 'connection failed. is the server running?');
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-prompt">$</span> sign in';
+            }
+        }
+
+        // ── Sign Up Handler ───────────────────────────────────────
+        async function handleSignup(event) {
+            event.preventDefault();
+
+            const btn = document.getElementById('signupBtn');
+            const name = document.getElementById('signupName').value.trim();
+            const email = document.getElementById('signupEmail').value.trim();
+            const password = document.getElementById('signupPassword').value;
+            const confirm = document.getElementById('signupConfirm').value;
+            const role = document.querySelector('input[name="role"]:checked').value;
+
+            // Validate
+            if (!name || !email || !password) {
+                showStatus('signupStatus', 'error', 'all fields are required');
+                return;
+            }
+
+            if (password.length < 6) {
+                showStatus('signupStatus', 'error', 'password must be at least 6 characters');
+                return;
+            }
+
+            if (password !== confirm) {
+                showStatus('signupStatus', 'error', 'passwords do not match');
+                return;
+            }
+
+            // Show loading state
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> creating account...';
+            showStatus('signupStatus', 'loading', 'registering...');
+
+            try {
+                const res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        full_name: name,
+                        email: email,
+                        password: password,
+                        role: role,
+                    }),
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    showStatus('signupStatus', 'success', `account created. redirecting...`);
+                    // Auto-login, redirect to main app
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 600);
+                } else {
+                    showStatus('signupStatus', 'error', data.error || 'registration failed');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span class="btn-prompt">$</span> create account';
+                }
+            } catch (err) {
+                showStatus('signupStatus', 'error', 'connection failed. is the server running?');
+                btn.disabled = false;
+                btn.innerHTML = '<span class="btn-prompt">$</span> create account';
+            }
+        }
+
+        // ── Auto-check if already logged in ───────────────────────
+        (async function checkSession() {
+            try {
+                const res = await fetch('/auth/me');
+                if (res.ok) {
+                    // Already logged in, redirect to main app
+                    window.location.href = '/';
+                }
+            } catch (e) {
+                // Not logged in, stay on login page
+            }
+        })();
+    </script>
+</body>
+</html>
