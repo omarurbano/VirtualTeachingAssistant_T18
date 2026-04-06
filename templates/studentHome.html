@@ -23,8 +23,8 @@
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
                     </div>
                     <div class="offcanvas-body">
-                        <ul id="studentCourses">
-                            <li>No Courses</li>
+                        <ul id="studentCourses" class="list-group list-group-flush list-group-item-dark gap-2">
+                            <li><button>Courses</button></li>
                         </ul>
                     </div>
                 </div>
@@ -36,6 +36,47 @@
             </div>
         </header>
 
+        <div class="d-flex justify-content-center my-5">
+            <div class="card my-10" style="width: 18rem;">
+                <img src="/data/stockbook.jpg" class="card-img-top" alt="...">
+                <div class="card-body bg-dark text-bg-dark">
+                  <h5 class="card-title">Add Course</h5>
+                  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCourseModal">+</button>
+                </div>
+              </div>
+        </div>
+        <!-- Modal -->
+        <div class="modal fade" id="addCourseModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-bg-dark">
+                <div class="modal-header">
+                <h1 class="modal-title fs-5" id="exampleModalLabel">Add Course</h1>
+                <button id="modalclosebtn" type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addCourseForm">
+                        <div class="mb-3">
+                            <label for="courseCode" class="form-label">Enter Course Code</label>
+                            <input type="text" class="form-control" id="courseCode" placeholder="course code">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Submit</button>
+                    </form>
+                </div>
+            </div>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div class="toast-container position-fixed bottom-0 end-0 p-3">
+            <div id="myToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header bg-dark">
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+                <div class="toast-body bg-dark text-bg-dark">
+                <label id="toastmsg">Hello, world! This is a toast message.</label>
+                </div>
+            </div>
+        </div>
 
     </div>
     
