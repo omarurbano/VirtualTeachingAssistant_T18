@@ -1940,6 +1940,11 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
 # FLASK ROUTES
 # ============================================================================
 
+@app.route('/login')
+def login():
+    """Render the login page."""
+    return render_template('login.html')
+
 @app.route('/')
 def index():
     """Render the main page."""
