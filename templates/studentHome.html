@@ -15,65 +15,68 @@
             <!-- makes the offcanvas btn visible -->
             <div class="navbar navbar-light"> 
                 <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
+                    <!-- <span class="navbar-toggler-icon"></span> -->
+                    <div class="logo"></div>
                 </button>
                 <div class="offcanvas offcanvas-start text-bg-dark" tabindex="-1" id="offcanvasDarkNavbar" aria-labelledby="offcanvasDarkNavbarLabel">
                     <div class="offcanvas-header">
                         <h5 class="offcanvas-title" id="offcanvasDarkNavbarLabel">Courses</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+                        <button type="button" class="btn-close btn-close-info" data-bs-dismiss="offcanvas" aria-label="Close"></button>
                     </div>
                     <div class="offcanvas-body">
                         <ul id="studentCourses" class="list-group list-group-flush list-group-item-dark gap-2">
-                            <li><button>Courses</button></li>
+                            <li class="text-info-subtle">No Courses available</li>
                         </ul>
                     </div>
                 </div>
                 
             </div>
             <div class="d-flex justify-content-end gap-4">
-                <h1 id="userWelcome" class="align-self-end">Welcome, User</h1>
-                <button class="btn btn-outline-light" id="logoutBtn">Logout</button>
+                <h1 id="userWelcome" class="align-self-end text-info">Welcome, User</h1>
+                <button class="btn btn-outline-info" id="logoutBtn">Logout</button>
             </div>
         </header>
 
         <div class="d-flex justify-content-center my-5">
-            <div class="card my-10" style="width: 18rem;">
-                <img src="/data/stockbook.jpg" class="card-img-top" alt="...">
+            <div class="card my-10 border-info" style="width: 18rem;">
+                <img src="https://ascc.wsu.edu/wp-content/uploads/sites/157/2026/04/stockbook.jpg" class="card-img-top" alt="Stack of Books">
                 <div class="card-body bg-dark text-bg-dark">
                   <h5 class="card-title">Add Course</h5>
-                  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCourseModal">+</button>
+                  <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#addCourseModal">+</button>
                 </div>
               </div>
         </div>
         <!-- Modal -->
         <div class="modal fade" id="addCourseModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content bg-dark text-bg-dark">
-                <div class="modal-header">
-                <h1 class="modal-title fs-5" id="exampleModalLabel">Add Course</h1>
-                <button id="modalclosebtn" type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="modal-content bg-dark text-bg-dark">
+                    <div class="modal-header border-dark">
+                        <h1 class="modal-title fs-3" id="exampleModalLabel">Add Course</h1>
+                        <button id="modalclosebtn" type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="addCourseForm">
+                            <div class="mb-4">
+                                <label for="courseCode" class="form-label text-info">Enter Course Code</label>
+                                <input type="text" class="form-control bg-dark text-white border-info-subtle" id="courseCode" placeholder="course code">
+                            </div>
+                            <button type="submit" class="btn btn-outline-info">Submit</button>
+                        </form>
+                    </div>
                 </div>
-                <div class="modal-body">
-                    <form id="addCourseForm">
-                        <div class="mb-3">
-                            <label for="courseCode" class="form-label">Enter Course Code</label>
-                            <input type="text" class="form-control" id="courseCode" placeholder="course code">
-                        </div>
-                        <button type="submit" class="btn btn-primary">Submit</button>
-                    </form>
-                </div>
-            </div>
             </div>
         </div>
 
         <!-- Toast -->
         <div class="toast-container position-fixed bottom-0 end-0 p-3">
             <div id="myToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-                <div class="toast-header bg-dark">
-                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                <div class="toast-header bg-dark border-dark">
+                    <div class="logo rounded me-2"></div>
+                    <strong class="me-auto text-white">Message</strong>
+                    <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
                 </div>
-                <div class="toast-body bg-dark text-bg-dark">
-                <label id="toastmsg">Hello, world! This is a toast message.</label>
+                <div class="toast-body bg-dark text-info">
+                    <label id="toastmsg">Hello, world! This is a toast message.</label>
                 </div>
             </div>
         </div>

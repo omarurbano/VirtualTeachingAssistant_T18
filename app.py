@@ -819,7 +819,12 @@ def answerimagequery():
 
 
     # return jsonify("Test")
-   
+
+@app.route('/studenthome')
+def loadstudenthome():
+    """Render the student page."""
+    return render_template('studentHome.html')
+
 
 
 # ============================================================================

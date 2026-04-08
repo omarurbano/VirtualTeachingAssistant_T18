@@ -80,7 +80,7 @@ app.post("/addCourse/:userId/:courseId", async (req, res) => {
     const { userId, courseId } = req.params;
     try {
       const result = await pool.query("INSERT INTO user_courses (user_id, course_id) VALUES ($1, $2) RETURNING *", [userId, courseId]);
-      res.json(result.rows[0]);
+      res.json(result.rows[0]).status(200);
     } catch (err) {
       console.error(err);
       res.status(500).send("Server error");

@@ -28,15 +28,12 @@ async function renderCourses(){
         const courseList = document.getElementById("studentCourses");
         courseList.innerHTML = "";
         courses.forEach(course => {
-            // const listItem = document.createElement("li");
-            // const btn = listItem.appendChild(document.createElement("button"));
             btn = document.createElement("button");
             btn.textContent = course.course_name;
             btn.onclick = () => {
-                window.location.href = "http://localhost:5000/";
+                window.location.href = "http://localhost:5000/"; //Loads to VTA chat
             };
-            //list-group-item list-group-item-action active
-            btn.classList.add("list-group-item", "list-group-item-action", "active");
+            btn.classList.add("list-group-item","list-group-item-secondary","list-group-item-action", "active", "text-info");
             courseList.appendChild(btn);
         });
     }
@@ -60,6 +57,7 @@ async function validCourseNumber(coursecode) {
         return course;
     } else {
         console.error("Course not found");
+        triggerToast("Course not found");
         return null;
     }
 }
@@ -97,8 +95,10 @@ async function addCourse(){
             console.log(result);
             document.getElementById('modalclosebtn').click();
             triggerToast("Course added successfully!");
+            setTimeout(() => {
+                window.location.href = "http://localhost:5000/studenthome"
+            }, 2000);
         } else {
-            console.error("Failed to add course");
             triggerToast("Failed to add course");
         }
     }
