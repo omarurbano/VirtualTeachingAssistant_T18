@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VTA // Instructor Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/instructor.css') }}" />
+</head>
+<body>
+
+<!-- ░░ TOP NAV ░░ -->
+<header class="top-bar">
+  <div class="top-bar-brand">
+    <span class="prompt">$</span> vta<span class="accent">_</span>instructor
+  </div>
+  <div class="top-bar-right">
+    <span class="welcome-text">Welcome, <span class="accent">Dr. Reynolds</span></span>
+    <a href="#" class="btn-term btn-term-outline">$ logout</a>
+  </div>
+</header>
+
+<!-- ░░ LAYOUT WRAPPER ░░ -->
+<div class="layout-wrapper">
+
+  <!-- ░░ SIDEBAR ░░ -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="prompt">$</span> ls ./courses
+    </div>
+
+    <ul class="course-list">
+      <li class="course-list-item active" data-course="cpts451">
+        <span class="prompt">&gt;</span>
+        <span class="course-list-code">CPTS_451</span>
+        <span class="course-list-name">Databases</span>
+      </li>
+      <li class="course-list-item" data-course="cpts355">
+        <span class="prompt">&gt;</span>
+        <span class="course-list-code">CPTS_355</span>
+        <span class="course-list-name">Programming Languages</span>
+      </li>
+      <li class="course-list-item" data-course="cpts421">
+        <span class="prompt">&gt;</span>
+        <span class="course-list-code">CPTS_421</span>
+        <span class="course-list-name">Software Engineering</span>
+      </li>
+      <li class="course-list-item" data-course="cpts360">
+        <span class="prompt">&gt;</span>
+        <span class="course-list-code">CPTS_360</span>
+        <span class="course-list-name">Systems Programming</span>
+      </li>
+      <li class="course-list-item" data-course="cpts415">
+        <span class="prompt">&gt;</span>
+        <span class="course-list-code">CPTS_415</span>
+        <span class="course-list-name">Machine Learning</span>
+      </li>
+    </ul>
+
+    <div class="sidebar-footer">
+      <button class="btn-term btn-term-primary w-100" data-bs-toggle="modal" data-bs-target="#createCourseModal">
+        $ create new course
+      </button>
+    </div>
+  </aside>
+
+  <!-- ░░ MAIN CONTENT ░░ -->
+  <main class="main-content">
+
+    <div class="section-header">
+      <span class="prompt">$</span> cat ./courses/overview.json
+      <span class="cursor-blink">█</span>
+    </div>
+
+    <div class="courses-grid">
+
+      <!-- Card 1 -->
+      <div class="course-card">
+        <div class="course-card-header">
+          <div>
+            <div class="course-card-title">Databases</div>
+            <span class="course-badge">CPTS_451</span>
+          </div>
+          <div class="course-card-status online">● live</div>
+        </div>
+        <div class="course-card-stats">
+          <div class="stat-item">
+            <span class="stat-label">$ students</span>
+            <span class="stat-value">34</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">$ materials</span>
+            <span class="stat-value">12</span>
+          </div>
+        </div>
+        <div class="course-card-actions">
+          <a href="/instructor/course/cpts451" class="btn-term btn-term-primary flex-fill">$ open course</a>
+          <a href="/instructor/analytics/cpts451" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="course-card">
+        <div class="course-card-header">
+          <div>
+            <div class="course-card-title">Programming Languages</div>
+            <span class="course-badge">CPTS_355</span>
+          </div>
+          <div class="course-card-status online">● live</div>
+        </div>
+        <div class="course-card-stats">
+          <div class="stat-item">
+            <span class="stat-label">$ students</span>
+            <span class="stat-value">28</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">$ materials</span>
+            <span class="stat-value">9</span>
+          </div>
+        </div>
+        <div class="course-card-actions">
+          <a href="/instructor/course/cpts355" class="btn-term btn-term-primary flex-fill">$ open course</a>
+          <a href="/instructor/analytics/cpts355" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="course-card">
+        <div class="course-card-header">
+          <div>
+            <div class="course-card-title">Software Engineering</div>
+            <span class="course-badge">CPTS_421</span>
+          </div>
+          <div class="course-card-status online">● live</div>
+        </div>
+        <div class="course-card-stats">
+          <div class="stat-item">
+            <span class="stat-label">$ students</span>
+            <span class="stat-value">41</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">$ materials</span>
+            <span class="stat-value">17</span>
+          </div>
+        </div>
+        <div class="course-card-actions">
+          <a href="/instructor/course/cpts421" class="btn-term btn-term-primary flex-fill">$ open course</a>
+          <a href="/instructor/analytics/cpts421" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+        </div>
+      </div>
+
+      <!-- Card 4 -->
+      <div class="course-card">
+        <div class="course-card-header">
+          <div>
+            <div class="course-card-title">Systems Programming</div>
+            <span class="course-badge">CPTS_360</span>
+          </div>
+          <div class="course-card-status idle">○ idle</div>
+        </div>
+        <div class="course-card-stats">
+          <div class="stat-item">
+            <span class="stat-label">$ students</span>
+            <span class="stat-value">22</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">$ materials</span>
+            <span class="stat-value">6</span>
+          </div>
+        </div>
+        <div class="course-card-actions">
+          <a href="/instructor/course/cpts360" class="btn-term btn-term-primary flex-fill">$ open course</a>
+          <a href="/instructor/analytics/cpts360" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+        </div>
+      </div>
+
+      <!-- Card 5 -->
+      <div class="course-card">
+        <div class="course-card-header">
+          <div>
+            <div class="course-card-title">Machine Learning</div>
+            <span class="course-badge">CPTS_415</span>
+          </div>
+          <div class="course-card-status idle">○ idle</div>
+        </div>
+        <div class="course-card-stats">
+          <div class="stat-item">
+            <span class="stat-label">$ students</span>
+            <span class="stat-value">19</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">$ materials</span>
+            <span class="stat-value">14</span>
+          </div>
+        </div>
+        <div class="course-card-actions">
+          <a href="/instructor/course/cpts415" class="btn-term btn-term-primary flex-fill">$ open course</a>
+          <a href="/instructor/analytics/cpts415" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+        </div>
+      </div>
+
+    </div><!-- /courses-grid -->
+  </main>
+</div><!-- /layout-wrapper -->
+
+
+<!-- ░░ CREATE COURSE MODAL ░░ -->
+<div class="modal fade" id="createCourseModal" tabindex="-1" aria-labelledby="createCourseModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content term-modal">
+
+      <div class="modal-header term-modal-header">
+        <span class="modal-title-text">
+          <span class="prompt">$</span> create_course --interactive
+        </span>
+        <button type="button" class="btn-term-close" data-bs-dismiss="modal" aria-label="Close">[x]</button>
+      </div>
+
+      <div class="modal-body term-modal-body">
+
+        <!-- Form -->
+        <div id="createCourseForm">
+          <div class="term-field">
+            <label class="term-label" for="courseName">
+              <span class="prompt">$</span> course_name:
+            </label>
+            <input type="text" id="courseName" class="term-input" placeholder="e.g. Advanced Algorithms" autocomplete="off" />
+          </div>
+
+          <div class="term-field">
+            <label class="term-label" for="courseSubject">
+              <span class="prompt">$</span> subject_tag:
+            </label>
+            <input type="text" id="courseSubject" class="term-input" placeholder="e.g. CPTS_500" autocomplete="off" />
+          </div>
+
+          <div id="formError" class="term-error" style="display:none;"></div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn-term btn-term-primary flex-fill" id="submitCreateCourse">
+              $ initialize course
+            </button>
+            <button type="button" class="btn-term btn-term-outline flex-fill" data-bs-dismiss="modal">
+              $ cancel
+            </button>
+          </div>
+        </div>
+
+        <!-- Success state -->
+        <div id="createCourseSuccess" style="display:none;">
+          <div class="term-output-block">
+            <div class="term-output-line">Initializing course...</div>
+            <div class="term-output-line">Generating class code... <span class="accent" id="generatedCode"></span></div>
+            <div class="term-output-line">Writing to database... OK</div>
+            <div class="term-output-line success-line">&gt; Course created successfully.</div>
+            <div class="term-output-line success-line">
+              Share code: <span class="code-highlight" id="shareCode"></span>
+            </div>
+          </div>
+          <div class="modal-actions mt-3">
+            <button type="button" class="btn-term btn-term-primary flex-fill" data-bs-dismiss="modal" id="doneBtn">
+              $ done
+            </button>
+          </div>
+        </div>
+
+      </div><!-- /modal-body -->
+    </div>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // ── Sidebar active state ──────────────────────────────────────────────────
+  document.querySelectorAll('.course-list-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.course-list-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+    });
+  });
+
+  // ── Class code generator ──────────────────────────────────────────────────
+  function generateClassCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const seg = (n) => Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    return `${seg(2)}${Math.floor(Math.random()*9)+1}-${seg(1)}${Math.floor(Math.random()*9)+1}${seg(1)}`;
+  }
+
+  // ── Modal reset on open ───────────────────────────────────────────────────
+  const modalEl = document.getElementById('createCourseModal');
+  modalEl.addEventListener('show.bs.modal', () => {
+    document.getElementById('createCourseForm').style.display = 'block';
+    document.getElementById('createCourseSuccess').style.display = 'none';
+    document.getElementById('courseName').value = '';
+    document.getElementById('courseSubject').value = '';
+    document.getElementById('formError').style.display = 'none';
+  });
+
+  // ── Submit handler ────────────────────────────────────────────────────────
+  document.getElementById('submitCreateCourse').addEventListener('click', () => {
+    const name    = document.getElementById('courseName').value.trim();
+    const subject = document.getElementById('courseSubject').value.trim();
+    const errEl   = document.getElementById('formError');
+
+    if (!name || !subject) {
+      errEl.textContent = '> ERROR: all fields required.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    const code = generateClassCode();
+    document.getElementById('generatedCode').textContent = code;
+    document.getElementById('shareCode').textContent = code;
+
+    document.getElementById('createCourseForm').style.display = 'none';
+    document.getElementById('createCourseSuccess').style.display = 'block';
+  });
+</script>
+</body>
+</html>

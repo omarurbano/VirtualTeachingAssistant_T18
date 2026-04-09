@@ -55,21 +55,17 @@ python app.py
 ## Project Structure
 
 ```
-Multi_File_RAG/
-├── app.py                  # Flask web application
-├── templates/
-│   └── index.html          # Frontend HTML
-├── static/
-│   ├── style.css           # Styles
-│   └── script.js           # Frontend JavaScript
-├── document_loader.py      # Document loading module
-├── embedding_manager.py    # Text embeddings
-├── vector_store.py         # Vector database
-├── citation_tracker.py     # Citation tracking
-├── answer_generator.py    # Answer generation
-├── multimodal_processor.py # PDF processing
-├── requirements.txt        # Python dependencies
-└── README.md              # This file
+VirtualTeachingAssistant_T18/
+├── Sprints/              # Sprint documentation
+├── Reports/             # Project reports
+├── Code/                 # Source code
+├── Data/                 # Datasets
+├── Deployment/           # Deployment configs
+├── Testing/              # Test strategies
+├── Evaluation/           # Metrics and results
+├── Reflections/          # Team reflections
+├── Resources/            # Links and references
+└── Rubric/              # Grading rubrics
 ```
 
 ## API Endpoints

@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VTA // Course — CPTS_451</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/instructor.css') }}" />
+</head>
+<body>
+
+<!-- ░░ TOP BAR ░░ -->
+<header class="top-bar">
+  <div class="top-bar-left">
+    <a href="/instructor/dashboard" class="back-link">
+      <span class="prompt">$</span> cd ../dashboard
+    </a>
+    <span class="top-bar-sep">/</span>
+    <span class="top-bar-course-name">Databases</span>
+    <span class="course-badge">CPTS_451</span>
+  </div>
+  <div class="top-bar-right">
+    <span class="welcome-text">Welcome, <span class="accent">Dr. Reynolds</span></span>
+    <a href="#" class="btn-term btn-term-outline">$ logout</a>
+  </div>
+</header>
+
+<!-- ░░ PAGE WRAPPER ░░ -->
+<div class="course-wrapper">
+
+  <!-- ░░ TAB NAV ░░ -->
+  <nav class="term-tabs" id="courseTabs">
+    <button class="term-tab active" data-tab="materials">$ materials</button>
+    <button class="term-tab"        data-tab="students">$ students</button>
+    <button class="term-tab"        data-tab="settings">$ settings</button>
+  </nav>
+
+  <!-- ════════════════════════════════════════════════
+       TAB 1 — MATERIALS
+  ════════════════════════════════════════════════ -->
+  <section class="tab-panel active" id="tab-materials">
+
+    <div class="section-header">
+      <span class="prompt">$</span> ls -lh ./materials/CPTS_451/
+      <span class="cursor-blink">█</span>
+    </div>
+
+    <!-- Materials table -->
+    <div class="term-table-wrap">
+      <table class="term-table">
+        <thead>
+          <tr>
+            <th>filename</th>
+            <th>type</th>
+            <th>uploaded</th>
+            <th>status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="filename-cell">
+              <span class="file-icon">▸</span> week01_intro_to_databases.pdf
+            </td>
+            <td><span class="type-badge type-lecture">LECTURE</span></td>
+            <td class="date-cell">2025-01-15</td>
+            <td><span class="status-done">● embedding complete</span></td>
+          </tr>
+          <tr>
+            <td class="filename-cell">
+              <span class="file-icon">▸</span> week02_relational_model.pdf
+            </td>
+            <td><span class="type-badge type-lecture">LECTURE</span></td>
+            <td class="date-cell">2025-01-22</td>
+            <td><span class="status-done">● embedding complete</span></td>
+          </tr>
+          <tr>
+            <td class="filename-cell">
+              <span class="file-icon">▸</span> assignment_01_erd_design.pdf
+            </td>
+            <td><span class="type-badge type-assignment">ASSIGNMENT</span></td>
+            <td class="date-cell">2025-01-24</td>
+            <td><span class="status-done">● embedding complete</span></td>
+          </tr>
+          <tr>
+            <td class="filename-cell">
+              <span class="file-icon">▸</span> lab_02_sql_basics.pdf
+            </td>
+            <td><span class="type-badge type-lab">LAB</span></td>
+            <td class="date-cell">2025-01-29</td>
+            <td><span class="status-done">● embedding complete</span></td>
+          </tr>
+          <tr>
+            <td class="filename-cell">
+              <span class="file-icon">▸</span> week03_normalization.pdf
+            </td>
+            <td><span class="type-badge type-lecture">LECTURE</span></td>
+            <td class="date-cell">2025-02-03</td>
+            <td><span class="status-done">● embedding complete</span></td>
+          </tr>
+          <tr>
+            <td class="filename-cell">
+              <span class="file-icon">▸</span> midterm_exam_sp25.pdf
+            </td>
+            <td><span class="type-badge type-exam">EXAM</span></td>
+            <td class="date-cell">2025-02-10</td>
+            <td><span class="status-done">● embedding complete</span></td>
+          </tr>
+          <tr>
+            <td class="filename-cell">
+              <span class="file-icon">▸</span> week04_transactions.pdf
+            </td>
+            <td><span class="type-badge type-lecture">LECTURE</span></td>
+            <td class="date-cell">2025-02-17</td>
+            <td>
+              <span class="status-processing">◌ processing<span class="cursor-blink-sm">_</span></span>
+            </td>
+          </tr>
+          <tr>
+            <td class="filename-cell">
+              <span class="file-icon">▸</span> lab_03_joins_and_aggregates.pdf
+            </td>
+            <td><span class="type-badge type-lab">LAB</span></td>
+            <td class="date-cell">2025-02-18</td>
+            <td>
+              <span class="status-processing">◌ processing<span class="cursor-blink-sm">_</span></span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Upload panel -->
+    <div class="upload-section">
+      <div class="upload-section-title">
+        <span class="prompt">$</span> upload --embed ./new_file
+      </div>
+
+      <div class="upload-form">
+        <div class="upload-row">
+          <div class="upload-field upload-field-file">
+            <label class="term-label">
+              <span class="prompt">$</span> select_file:
+            </label>
+            <div class="file-input-wrap">
+              <input type="file" id="fileUpload" class="file-input-hidden" accept=".pdf,.docx,.pptx,.txt,.md" />
+              <label for="fileUpload" class="file-input-label">
+                <span id="fileInputText">choose file...</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="upload-field upload-field-type">
+            <label class="term-label" for="fileType">
+              <span class="prompt">$</span> material_type:
+            </label>
+            <select id="fileType" class="term-select">
+              <option value="">-- select type --</option>
+              <option value="lecture">Lecture Notes</option>
+              <option value="assignment">Assignment</option>
+              <option value="lab">Lab</option>
+              <option value="exam">Exam</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="upload-actions">
+          <button class="btn-term btn-term-primary" id="uploadBtn">
+            $ upload &amp; embed
+          </button>
+        </div>
+
+        <div id="uploadFeedback" class="upload-feedback" style="display:none;"></div>
+      </div>
+
+      <!-- Drive link section -->
+      <div class="drive-section">
+        <div class="drive-section-title">
+          <span class="prompt">$</span> link --source google_drive
+        </div>
+        <div class="drive-comment">// grant OAuth access to your Drive folder</div>
+
+        <div class="drive-row">
+          <input type="url" id="driveLink" class="term-input" placeholder="https://drive.google.com/drive/folders/..." />
+          <button class="btn-term btn-term-primary" id="driveLinkBtn">
+            $ link drive folder
+          </button>
+        </div>
+        <div id="driveFeedback" class="upload-feedback" style="display:none;"></div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════
+       TAB 2 — STUDENTS
+  ════════════════════════════════════════════════ -->
+  <section class="tab-panel" id="tab-students">
+
+    <div class="section-header">
+      <span class="prompt">$</span> cat ./students/CPTS_451/roster.csv
+      <span class="cursor-blink">█</span>
+    </div>
+
+    <div class="students-toolbar">
+      <div class="students-comment">// analytics are de-identified by default</div>
+      <button class="btn-term btn-term-outline" id="exportBtn">$ export list</button>
+    </div>
+
+    <div class="term-table-wrap">
+      <table class="term-table">
+        <thead>
+          <tr>
+            <th>name</th>
+            <th>email</th>
+            <th>joined</th>
+            <th>queries</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Alice Nguyen</td>
+            <td class="email-cell">a.nguyen@wsu.edu</td>
+            <td class="date-cell">2025-01-13</td>
+            <td class="query-cell"><span class="query-count">47</span></td>
+          </tr>
+          <tr>
+            <td>Ben Okafor</td>
+            <td class="email-cell">b.okafor@wsu.edu</td>
+            <td class="date-cell">2025-01-13</td>
+            <td class="query-cell"><span class="query-count">31</span></td>
+          </tr>
+          <tr>
+            <td>Chloe Martinez</td>
+            <td class="email-cell">c.martinez@wsu.edu</td>
+            <td class="date-cell">2025-01-14</td>
+            <td class="query-cell"><span class="query-count">62</span></td>
+          </tr>
+          <tr>
+            <td>David Kim</td>
+            <td class="email-cell">d.kim@wsu.edu</td>
+            <td class="date-cell">2025-01-14</td>
+            <td class="query-cell"><span class="query-count">19</span></td>
+          </tr>
+          <tr>
+            <td>Ella Patel</td>
+            <td class="email-cell">e.patel@wsu.edu</td>
+            <td class="date-cell">2025-01-15</td>
+            <td class="query-cell"><span class="query-count">88</span></td>
+          </tr>
+          <tr>
+            <td>Felix Torres</td>
+            <td class="email-cell">f.torres@wsu.edu</td>
+            <td class="date-cell">2025-01-15</td>
+            <td class="query-cell"><span class="query-count">24</span></td>
+          </tr>
+          <tr>
+            <td>Grace Liu</td>
+            <td class="email-cell">g.liu@wsu.edu</td>
+            <td class="date-cell">2025-01-16</td>
+            <td class="query-cell"><span class="query-count">55</span></td>
+          </tr>
+          <tr>
+            <td>Henry Walsh</td>
+            <td class="email-cell">h.walsh@wsu.edu</td>
+            <td class="date-cell">2025-01-17</td>
+            <td class="query-cell"><span class="query-count">11</span></td>
+          </tr>
+          <tr>
+            <td>Isla Fernandez</td>
+            <td class="email-cell">i.fernandez@wsu.edu</td>
+            <td class="date-cell">2025-01-17</td>
+            <td class="query-cell"><span class="query-count">73</span></td>
+          </tr>
+          <tr>
+            <td>James Cooper</td>
+            <td class="email-cell">j.cooper@wsu.edu</td>
+            <td class="date-cell">2025-01-18</td>
+            <td class="query-cell"><span class="query-count">40</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="students-footer">
+      <span class="text-dim">showing 10 of 34 students</span>
+      <button class="btn-term btn-term-outline btn-sm-term">$ load more</button>
+    </div>
+
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════
+       TAB 3 — SETTINGS
+  ════════════════════════════════════════════════ -->
+  <section class="tab-panel" id="tab-settings">
+
+    <div class="section-header">
+      <span class="prompt">$</span> nano ./config/CPTS_451.conf
+      <span class="cursor-blink">█</span>
+    </div>
+
+    <div class="settings-grid">
+
+      <!-- Course name -->
+      <div class="settings-block">
+        <div class="settings-block-title">
+          <span class="prompt">$</span> course_name
+        </div>
+        <div class="settings-block-body">
+          <label class="term-label" for="settingCourseName">
+            <span class="prompt">$</span> edit value:
+          </label>
+          <div class="settings-input-row">
+            <input type="text" id="settingCourseName" class="term-input" value="Databases" />
+            <button class="btn-term btn-term-primary" id="saveNameBtn">$ save</button>
+          </div>
+          <div id="saveNameFeedback" class="upload-feedback" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- Class code -->
+      <div class="settings-block">
+        <div class="settings-block-title">
+          <span class="prompt">$</span> class_code
+        </div>
+        <div class="settings-block-body">
+          <label class="term-label">
+            <span class="prompt">$</span> current value: <span class="settings-comment">// read-only</span>
+          </label>
+          <div class="settings-input-row">
+            <input type="text" id="settingClassCode" class="term-input term-input-readonly" value="XK9-P2M" readonly />
+            <button class="btn-term btn-term-outline" id="regenCodeBtn">$ regenerate code</button>
+          </div>
+          <div id="regenFeedback" class="upload-feedback" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- Archive toggle -->
+      <div class="settings-block settings-block-danger">
+        <div class="settings-block-title danger-title">
+          <span class="danger-prompt">!</span> danger_zone
+        </div>
+        <div class="settings-block-body">
+          <div class="archive-row">
+            <div class="archive-info">
+              <div class="archive-label">$ archive_course</div>
+              <div class="archive-desc">
+                // students lose access. materials are preserved. action is reversible.
+              </div>
+            </div>
+            <label class="toggle-switch" aria-label="Archive course">
+              <input type="checkbox" id="archiveToggle" />
+              <span class="toggle-track">
+                <span class="toggle-thumb"></span>
+              </span>
+            </label>
+          </div>
+          <div id="archiveFeedback" class="upload-feedback" style="display:none;"></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+</div><!-- /course-wrapper -->
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // ── Tab switching ─────────────────────────────────────────────
+  document.querySelectorAll('.term-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.term-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ── File input label ──────────────────────────────────────────
+  document.getElementById('fileUpload').addEventListener('change', function () {
+    const label = document.getElementById('fileInputText');
+    label.textContent = this.files.length ? this.files[0].name : 'choose file...';
+  });
+
+  // ── Upload feedback ───────────────────────────────────────────
+  document.getElementById('uploadBtn').addEventListener('click', () => {
+    const file = document.getElementById('fileUpload').files[0];
+    const type = document.getElementById('fileType').value;
+    const fb   = document.getElementById('uploadFeedback');
+
+    if (!file || !type) {
+      showFeedback(fb, '> ERROR: select a file and material type.', 'error');
+      return;
+    }
+    showFeedback(fb, `> Queued "${file.name}" for embedding... OK`, 'success');
+    document.getElementById('fileInputText').textContent = 'choose file...';
+    document.getElementById('fileUpload').value = '';
+    document.getElementById('fileType').value = '';
+  });
+
+  // ── Drive link feedback ───────────────────────────────────────
+  document.getElementById('driveLinkBtn').addEventListener('click', () => {
+    const link = document.getElementById('driveLink').value.trim();
+    const fb   = document.getElementById('driveFeedback');
+
+    if (!link) {
+      showFeedback(fb, '> ERROR: paste a Google Drive folder URL.', 'error');
+      return;
+    }
+    if (!link.includes('drive.google.com')) {
+      showFeedback(fb, '> ERROR: URL does not appear to be a Google Drive link.', 'error');
+      return;
+    }
+    showFeedback(fb, '> Drive folder linked. Sync will begin after OAuth confirmation.', 'success');
+    document.getElementById('driveLink').value = '';
+  });
+
+  // ── Export list ───────────────────────────────────────────────
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const data = [
+      ['name','email','joined','queries'],
+      ['Alice Nguyen','a.nguyen@wsu.edu','2025-01-13','47'],
+      ['Ben Okafor','b.okafor@wsu.edu','2025-01-13','31'],
+      ['Chloe Martinez','c.martinez@wsu.edu','2025-01-14','62'],
+    ];
+    const csv  = data.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'CPTS_451_roster.csv'; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ── Save course name ──────────────────────────────────────────
+  document.getElementById('saveNameBtn').addEventListener('click', () => {
+    const val = document.getElementById('settingCourseName').value.trim();
+    const fb  = document.getElementById('saveNameFeedback');
+    if (!val) {
+      showFeedback(fb, '> ERROR: course name cannot be empty.', 'error');
+      return;
+    }
+    showFeedback(fb, `> course_name updated to "${val}". Changes saved.`, 'success');
+  });
+
+  // ── Regenerate class code ─────────────────────────────────────
+  document.getElementById('regenCodeBtn').addEventListener('click', () => {
+    const fb = document.getElementById('regenFeedback');
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const seg = (n) => Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const code = `${seg(2)}${Math.floor(Math.random()*9)+1}-${seg(1)}${Math.floor(Math.random()*9)+1}${seg(1)}`;
+    document.getElementById('settingClassCode').value = code;
+    showFeedback(fb, `> New class code generated: ${code}. Share with students.`, 'success');
+  });
+
+  // ── Archive toggle ────────────────────────────────────────────
+  document.getElementById('archiveToggle').addEventListener('change', function () {
+    const fb = document.getElementById('archiveFeedback');
+    if (this.checked) {
+      showFeedback(fb, '> Course archived. Students no longer have access.', 'warning');
+    } else {
+      showFeedback(fb, '> Course restored. Student access re-enabled.', 'success');
+    }
+  });
+
+  // ── Helper ───────────────────────────────────────────────────
+  function showFeedback(el, msg, type) {
+    el.textContent = msg;
+    el.className = 'upload-feedback feedback-' + type;
+    el.style.display = 'block';
+  }
+</script>
+</body>
+</html>
