@@ -2293,6 +2293,464 @@ def logout_auth():
         logger.error(f"Logout error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+# ============================================================================
+# INSTRUCTOR COURSE ENDPOINTS
+# ============================================================================
+
+@app.route('/api/courses', methods=['GET'])
+def get_courses():
+    """Get all courses (for instructor dashboard)."""
+    try:
+        # Get current user from session
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user or user.role != 'teacher':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Return courses for this teacher (from in-memory storage or database)
+        # For now, return mock data - in production, query database
+        courses = []
+        if hasattr(app_state, 'courses'):
+            courses = app_state.courses
+        
+        return jsonify({'courses': courses})
+    except Exception as e:
+        logger.error(f"Get courses error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/courses', methods=['POST'])
+def create_course():
+    """Create a new course (instructor only)."""
+    try:
+        # Get current user from session
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user or user.role != 'teacher':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        data = request.get_json()
+        name = data.get('name', '').strip()
+        code = data.get('code', '').strip().upper()
+        
+        if not name or not code:
+            return jsonify({'error': 'Name and code are required'}), 400
+        
+        # Generate unique course ID
+        import uuid
+        course_id = str(uuid.uuid4())[:8]
+        
+        # Create course object
+        course = {
+            'id': course_id,
+            'name': name,
+            'code': code,
+            'teacher_id': user.id,
+            'created_at': datetime.now().isoformat(),
+            'students_count': 0,
+            'materials_count': 0,
+            'status': 'active'
+        }
+        
+        # Store in memory (in production, save to database)
+        if not hasattr(app_state, 'courses'):
+            app_state.courses = []
+        app_state.courses.append(course)
+        
+        logger.info(f"Course created: {name} ({code}) by teacher {user.email}")
+        
+        return jsonify({'success': True, 'course': course}), 201
+    except Exception as e:
+        logger.error(f"Create course error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/courses/<course_id>', methods=['GET'])
+def get_course(course_id):
+    """Get a specific course."""
+    try:
+        # Get current user from session
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Find course
+        courses = getattr(app_state, 'courses', [])
+        course = next((c for c in courses if c['id'] == course_id), None)
+        
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+        
+        return jsonify({'course': course})
+    except Exception as e:
+        logger.error(f"Get course error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/courses/<course_id>', methods=['PUT'])
+def update_course(course_id):
+    """Update a course (name, code, etc)."""
+    try:
+        # Get current user from session
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user or user.role != 'teacher':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        data = request.get_json()
+        
+        # Find and update course
+        courses = getattr(app_state, 'courses', [])
+        for course in courses:
+            if course['id'] == course_id:
+                if 'name' in data:
+                    course['name'] = data['name']
+                if 'code' in data:
+                    course['code'] = data['code'].upper()
+                course['updated_at'] = datetime.now().isoformat()
+                return jsonify({'success': True, 'course': course})
+        
+        return jsonify({'error': 'Course not found'}), 404
+    except Exception as e:
+        logger.error(f"Update course error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/courses/<course_id>/regenerate-code', methods=['POST'])
+def regenerate_course_code(course_id):
+    """Regenerate course code."""
+    try:
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user or user.role != 'teacher':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Generate new code
+        import secrets
+        chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+        new_code = f"{secrets.choice(chars)}{secrets.randint(1,9)}-{secrets.choice(chars)}{secrets.randint(1,9)}{secrets.choice(chars)}"
+        
+        # Update course
+        courses = getattr(app_state, 'courses', [])
+        for course in courses:
+            if course['id'] == course_id:
+                course['code'] = new_code
+                course['updated_at'] = datetime.now().isoformat()
+                return jsonify({'success': True, 'code': new_code})
+        
+        return jsonify({'error': 'Course not found'}), 404
+    except Exception as e:
+        logger.error(f"Regenerate code error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/courses/<course_id>/archive', methods=['POST'])
+def archive_course(course_id):
+    """Archive/unarchive a course."""
+    try:
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user or user.role != 'teacher':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        data = request.get_json() or {}
+        archived = data.get('archived', True)
+        
+        courses = getattr(app_state, 'courses', [])
+        for course in courses:
+            if course['id'] == course_id:
+                course['status'] = 'archived' if archived else 'active'
+                course['updated_at'] = datetime.now().isoformat()
+                return jsonify({'success': True, 'status': course['status']})
+        
+        return jsonify({'error': 'Course not found'}), 404
+    except Exception as e:
+        logger.error(f"Archive course error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/courses/<course_id>/materials', methods=['GET'])
+def get_course_materials(course_id):
+    """Get materials for a course."""
+    try:
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Get materials for this course
+        materials = []
+        if hasattr(app_state, 'course_materials'):
+            materials = app_state.course_materials.get(course_id, [])
+        
+        return jsonify({'materials': materials})
+    except Exception as e:
+        logger.error(f"Get materials error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/courses/<course_id>/students', methods=['GET'])
+def get_course_students(course_id):
+    """Get enrolled students for a course."""
+    try:
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user or user.role != 'teacher':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Return mock student data - in production, query enrollment table
+        students = []
+        if hasattr(app_state, 'course_students'):
+            students = app_state.course_students.get(course_id, [])
+        
+        return jsonify({'students': students})
+    except Exception as e:
+        logger.error(f"Get students error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# ANALYTICS ENDPOINTS
+# ============================================================================
+
+@app.route('/api/analytics/<course_id>', methods=['GET'])
+def get_course_analytics(course_id):
+    """Get analytics for a course."""
+    try:
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user or user.role != 'teacher':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Return analytics data - in production, track queries and compute real stats
+        analytics = {
+            'total_queries': 0,
+            'active_students': 0,
+            'avg_session_length': 0,
+            'docs_uploaded': 0,
+            'confusing_topics': [],
+            'at_risk_students': [],
+            'engagement_trend': []
+        }
+        
+        # Get from stored analytics if available
+        if hasattr(app_state, 'analytics'):
+            analytics = app_state.analytics.get(course_id, analytics)
+        
+        return jsonify(analytics)
+    except Exception as e:
+        logger.error(f"Get analytics error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/analytics/<course_id>/queries', methods=['GET'])
+def get_course_queries(course_id):
+    """Get recent queries for a course."""
+    try:
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user or user.role != 'teacher':
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Return stored queries - in production, log and return real queries
+        queries = []
+        if hasattr(app_state, 'course_queries'):
+            queries = app_state.course_queries.get(course_id, [])
+        
+        return jsonify({'queries': queries})
+    except Exception as e:
+        logger.error(f"Get queries error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# STUDENT API COMPATIBILITY (for studentHome.js)
+# ============================================================================
+
+@app.route('/users/<user_id>', methods=['GET'])
+def get_user_by_id(user_id):
+    """Get user by ID (for student home page)."""
+    try:
+        # Check authentication
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # If requesting different user, only teachers can see other users
+        if str(user.id) != str(user_id) and user.role != 'teacher':
+            return jsonify({'error': 'Forbidden'}), 403
+        
+        return jsonify({
+            'id': user.id,
+            'email': user.email,
+            'full_name': user.full_name,
+            'first_name': user.full_name.split()[0] if user.full_name else 'Student',
+            'role': user.role
+        })
+    except Exception as e:
+        logger.error(f"Get user error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/studentcourses/<user_id>', methods=['GET'])
+def get_student_courses(user_id):
+    """Get courses for a student."""
+    try:
+        # Check authentication
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Get student's enrolled courses
+        courses = []
+        if hasattr(app_state, 'enrollments'):
+            course_ids = app_state.enrollments.get(str(user_id), [])
+            for cid in course_ids:
+                course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == cid), None)
+                if course:
+                    courses.append(course)
+        
+        return jsonify(courses)
+    except Exception as e:
+        logger.error(f"Get student courses error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/addCourse/<user_id>/<course_id>', methods=['POST'])
+def add_course_enrollment(user_id, course_id):
+    """Add course enrollment for a student."""
+    try:
+        # Check authentication
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        user = auth_session.get_session(token)
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        # Verify user matches or is teacher
+        if str(user.id) != str(user_id) and user.role != 'teacher':
+            return jsonify({'error': 'Forbidden'}), 403
+        
+        # Verify course exists
+        course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == course_id), None)
+        if not course:
+            # Also check by code
+            course = next((c for c in getattr(app_state, 'courses', []) if c['code'] == course_id), None)
+            if course:
+                course_id = course['id']
+        
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+        
+        # Add enrollment
+        if not hasattr(app_state, 'enrollments'):
+            app_state.enrollments = {}
+        
+        enrollments = app_state.enrollments
+        if str(user_id) not in enrollments:
+            enrollments[str(user_id)] = []
+        
+        if course_id not in enrollments[str(user_id)]:
+            enrollments[str(user_id)].append(course_id)
+            course['students_count'] = course.get('students_count', 0) + 1
+        
+        return jsonify({'success': True, 'course': course})
+    except Exception as e:
+        logger.error(f"Add course error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# Also need to add course enrollment for Node.js-style code lookup
+@app.route('/course/code/<course_code>', methods=['GET'])
+def get_course_by_code(course_code):
+    """Get course by course code."""
+    try:
+        course_code = course_code.upper()
+        courses = getattr(app_state, 'courses', [])
+        course = next((c for c in courses if c['code'].upper() == course_code), None)
+        
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+        
+        return jsonify({
+            'id': course['id'],
+            'course_id': course['id'],
+            'name': course['name'],
+            'code': course['code']
+        })
+    except Exception as e:
+        logger.error(f"Get course by code error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/course', methods=['GET'])
+def get_all_courses():
+    """Get all courses."""
+    try:
+        courses = getattr(app_state, 'courses', [])
+        return jsonify(courses)
+    except Exception as e:
+        logger.error(f"Get courses error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/course/<course_id>', methods=['GET'])
+def get_course_by_id(course_id):
+    """Get course by ID."""
+    try:
+        course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == course_id), None)
+        
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+        
+        return jsonify(course)
+    except Exception as e:
+        logger.error(f"Get course error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/')
 def index():
     """Render the login page."""

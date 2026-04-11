@@ -299,7 +299,7 @@
   });
 
   // ── Submit handler ────────────────────────────────────────────────────────
-  document.getElementById('submitCreateCourse').addEventListener('click', () => {
+  document.getElementById('submitCreateCourse').addEventListener('click', async () => {
     const name    = document.getElementById('courseName').value.trim();
     const subject = document.getElementById('courseSubject').value.trim();
     const errEl   = document.getElementById('formError');
@@ -310,13 +310,102 @@
       return;
     }
 
-    const code = generateClassCode();
-    document.getElementById('generatedCode').textContent = code;
-    document.getElementById('shareCode').textContent = code;
-
-    document.getElementById('createCourseForm').style.display = 'none';
-    document.getElementById('createCourseSuccess').style.display = 'block';
+    try {
+      errEl.textContent = '> Creating course...';
+      errEl.style.display = 'block';
+      
+      const response = await fetch('/api/courses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, code: subject })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        document.getElementById('generatedCode').textContent = data.course.code;
+        document.getElementById('shareCode').textContent = data.course.code;
+        
+        document.getElementById('createCourseForm').style.display = 'none';
+        document.getElementById('createCourseSuccess').style.display = 'block';
+        
+        // Reload courses list
+        loadCourses();
+      } else {
+        errEl.textContent = '> ERROR: ' + (data.error || 'Failed to create course');
+        errEl.style.display = 'block';
+      }
+    } catch (error) {
+      console.error('Create course error:', error);
+      errEl.textContent = '> ERROR: ' + error.message;
+      errEl.style.display = 'block';
+    }
   });
+  
+  // ── Load courses from API ───────────────────────────────────────────────────
+  async function loadCourses() {
+    try {
+      const response = await fetch('/api/courses');
+      const data = await response.json();
+      
+      if (response.ok && data.courses) {
+        updateCoursesGrid(data.courses);
+      }
+    } catch (error) {
+      console.error('Load courses error:', error);
+    }
+  }
+  
+  function updateCoursesGrid(courses) {
+    const grid = document.querySelector('.courses-grid');
+    if (!grid) return;
+    
+    // Keep existing cards if no courses returned (fallback to hardcoded)
+    if (!courses || courses.length === 0) {
+      return; // Use hardcoded data as fallback
+    }
+    
+    // Clear and rebuild grid
+    grid.innerHTML = '';
+    
+    courses.forEach(course => {
+      const card = document.createElement('div');
+      card.className = 'course-card';
+      card.innerHTML = `
+        <div class="course-card-header">
+          <div>
+            <div class="course-card-title">${escapeHtml(course.name)}</div>
+            <span class="course-badge">${escapeHtml(course.code)}</span>
+          </div>
+          <div class="course-card-status online">● live</div>
+        </div>
+        <div class="course-card-stats">
+          <div class="stat-item">
+            <span class="stat-label">$ students</span>
+            <span class="stat-value">${course.students_count || 0}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">$ materials</span>
+            <span class="stat-value">${course.materials_count || 0}</span>
+          </div>
+        </div>
+        <div class="course-card-actions">
+          <a href="/instructor/course/${course.id}" class="btn-term btn-term-primary flex-fill">$ open course</a>
+          <a href="/instructor/analytics/${course.id}" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+  
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+  
+  // Load courses on page load
+  loadCourses();
 </script>
 
 <!-- Logout Handler -->
