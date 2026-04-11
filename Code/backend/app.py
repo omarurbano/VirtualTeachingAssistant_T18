@@ -35,6 +35,9 @@ from werkzeug.utils import secure_filename
 # HTTP requests for Node.js API calls
 import requests
 
+# Supabase REST API (using requests library that's already available)
+# We'll use the REST API directly instead of the supabase-py client
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -123,6 +126,184 @@ os.makedirs(app.config['EXTRACTED_IMAGES_DIR'], exist_ok=True)
 # Multimodal processing flag
 # Set to True to extract images and tables from PDFs
 app.config['USE_MULTIMODAL_PDF'] = True  # Toggle for advanced PDF processing
+
+# ============================================================================
+# SUPABASE DATABASE (REST API)
+# ============================================================================
+
+# Supabase configuration
+SUPABASE_URL = "https://ehqjplwrrifezdwlsdbk.supabase.co"
+SUPABASE_KEY = "sb_publishable_rQZPfUr5fzxlGra3F1drJQ_qOUlx8Jo"
+
+
+def supabase_request(table, method='GET', data=None, params=None):
+    """Make a request to Supabase REST API."""
+    import requests
+    
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    headers = {
+        'apikey': SUPABASE_KEY,
+        'Authorization': f'Bearer {SUPABASE_KEY}',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+    }
+    
+    try:
+        if method == 'GET':
+            response = requests.get(url, headers=headers, params=params)
+        elif method == 'POST':
+            response = requests.post(url, headers=headers, json=data)
+        elif method == 'PATCH':
+            response = requests.patch(url, headers=headers, json=data, params=params)
+        elif method == 'DELETE':
+            response = requests.delete(url, headers=headers, params=params)
+        
+        if response.status_code >= 400:
+            logger.warning(f"Supabase error: {response.status_code}")
+            return {'error': response.text, 'status': response.status_code}
+        
+        try:
+            json_data = response.json() if response.text else None
+        except:
+            json_data = None
+        
+        return {'data': json_data, 'status': response.status_code}
+    except Exception as e:
+        return {'error': str(e), 'status': 500}
+
+
+class Database:
+    """Database helper class for Supabase REST API."""
+    
+    @staticmethod
+    def get_users():
+        """Get all users."""
+        result = supabase_request('users', params={'select': '*'})
+        return result
+    
+    @staticmethod
+    def get_user_by_id(user_id):
+        """Get user by ID."""
+        result = supabase_request('users', params={'id': f'eq.{user_id}', 'select': '*'})
+        return result
+    
+    @staticmethod
+    def get_user_by_email(email):
+        """Get user by email."""
+        result = supabase_request('users', params={'email': f'eq.{email.lower()}', 'select': '*'})
+        return result
+    
+    @staticmethod
+    def create_user(email, full_name, password_hash, role='student'):
+        """Create new user."""
+        result = supabase_request('users', method='POST', data={
+            'email': email.lower(),
+            'full_name': full_name,
+            'password_hash': password_hash,
+            'role': role
+        })
+        return result
+    
+    @staticmethod
+    def update_user(user_id, data):
+        """Update user."""
+        result = supabase_request('users', method='PATCH', data=data, params={'id': f'eq.{user_id}'})
+        return result
+    
+    @staticmethod
+    def get_courses():
+        """Get all courses."""
+        result = supabase_request('courses', params={'select': '*'})
+        return result
+    
+    @staticmethod
+    def get_course_by_id(course_id):
+        """Get course by ID."""
+        result = supabase_request('courses', params={'id': f'eq.{course_id}', 'select': '*'})
+        return result
+    
+    @staticmethod
+    def get_course_by_code(code):
+        """Get course by code."""
+        result = supabase_request('courses', params={'code': f'eq.{code.upper()}', 'select': '*'})
+        return result
+    
+    @staticmethod
+    def create_course(name, code, teacher_id):
+        """Create new course."""
+        result = supabase_request('courses', method='POST', data={
+            'name': name,
+            'code': code.upper(),
+            'teacher_id': teacher_id
+        })
+        return result
+    
+    @staticmethod
+    def update_course(course_id, data):
+        """Update course."""
+        result = supabase_request('courses', method='PATCH', data=data, params={'id': f'eq.{course_id}'})
+        return result
+    
+    @staticmethod
+    def delete_course(course_id):
+        """Delete course."""
+        result = supabase_request('courses', method='DELETE', params={'id': f'eq.{course_id}'})
+        return result
+    
+    @staticmethod
+    def get_enrollments(student_id=None, course_id=None):
+        """Get enrollments."""
+        params = {'select': '*'}
+        if student_id:
+            params['student_id'] = f'eq.{student_id}'
+        if course_id:
+            params['course_id'] = f'eq.{course_id}'
+        result = supabase_request('enrollments', params=params)
+        return result
+    
+    @staticmethod
+    def create_enrollment(student_id, course_id):
+        """Create enrollment."""
+        result = supabase_request('enrollments', method='POST', data={
+            'student_id': student_id,
+            'course_id': course_id
+        })
+        return result
+    
+    @staticmethod
+    def delete_enrollment(enrollment_id):
+        """Delete enrollment."""
+        result = supabase_request('enrollments', method='DELETE', params={'id': f'eq.{enrollment_id}'})
+        return result
+    
+    @staticmethod
+    def get_student_courses(student_id):
+        """Get courses for a student with enrollment info."""
+        # First get enrollments for this student
+        enrollments = supabase_request('enrollments', params={
+            'student_id': f'eq.{student_id}',
+            'select': 'course_id'
+        })
+        
+        if enrollments.get('error') or not enrollments.get('data'):
+            return {'data': []}
+        
+        course_ids = [e['course_id'] for e in enrollments['data']]
+        
+        if not course_ids:
+            return {'data': []}
+        
+        # Then get the courses
+        courses = supabase_request('courses', params={
+            'id': f'in.({",".join(course_ids)})',
+            'select': '*'
+        })
+        
+        return courses
+
+
+logger.info(f"Supabase configured: {SUPABASE_URL}")
+
 
 # ============================================================================
 # DEPENDENCY CHECK
@@ -2311,11 +2492,13 @@ def get_courses():
         if not user or user.role != 'teacher':
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Return courses for this teacher (from in-memory storage or database)
-        # For now, return mock data - in production, query database
-        courses = []
-        if hasattr(app_state, 'courses'):
-            courses = app_state.courses
+        # Get courses from Supabase
+        result = Database.get_courses()
+        if result.get('error'):
+            logger.warning(f"Supabase error: {result['error']}")
+            courses = []
+        else:
+            courses = result.get('data') or []
         
         return jsonify({'courses': courses})
     except Exception as e:
@@ -2343,26 +2526,16 @@ def create_course():
         if not name or not code:
             return jsonify({'error': 'Name and code are required'}), 400
         
-        # Generate unique course ID
-        import uuid
-        course_id = str(uuid.uuid4())[:8]
+        # Save to Supabase
+        result = Database.create_course(name, code, user.id)
         
-        # Create course object
-        course = {
-            'id': course_id,
-            'name': name,
-            'code': code,
-            'teacher_id': user.id,
-            'created_at': datetime.now().isoformat(),
-            'students_count': 0,
-            'materials_count': 0,
-            'status': 'active'
-        }
+        if result.get('error'):
+            logger.error(f"Create course error: {result['error']}")
+            return jsonify({'error': result['error']}), 400
         
-        # Store in memory (in production, save to database)
-        if not hasattr(app_state, 'courses'):
-            app_state.courses = []
-        app_state.courses.append(course)
+        course = result.get('data')
+        if isinstance(course, list) and len(course) > 0:
+            course = course[0]
         
         logger.info(f"Course created: {name} ({code}) by teacher {user.email}")
         
@@ -2385,11 +2558,16 @@ def get_course(course_id):
         if not user:
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Find course
-        courses = getattr(app_state, 'courses', [])
-        course = next((c for c in courses if c['id'] == course_id), None)
+        # Get course from Supabase
+        result = Database.get_course_by_id(course_id)
         
-        if not course:
+        if result.get('error'):
+            return jsonify({'error': 'Course not found'}), 404
+        
+        course = result.get('data')
+        if isinstance(course, list) and len(course) > 0:
+            course = course[0]
+        elif not course:
             return jsonify({'error': 'Course not found'}), 404
         
         return jsonify({'course': course})
@@ -2641,16 +2819,16 @@ def get_student_courses(user_id):
         if not user:
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Get student's enrolled courses
-        courses = []
-        if hasattr(app_state, 'enrollments'):
-            course_ids = app_state.enrollments.get(str(user_id), [])
-            for cid in course_ids:
-                course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == cid), None)
-                if course:
-                    courses.append(course)
+        # Get student's enrolled courses from Supabase
+        result = Database.get_student_courses(user_id)
         
-        return jsonify(courses)
+        if result.get('error'):
+            logger.warning(f"Supabase error: {result['error']}")
+            courses = []
+        else:
+            courses = result.get('data') or []
+        
+        return jsonify({'courses': courses})
     except Exception as e:
         logger.error(f"Get student courses error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2673,28 +2851,28 @@ def add_course_enrollment(user_id, course_id):
         if str(user.id) != str(user_id) and user.role != 'teacher':
             return jsonify({'error': 'Forbidden'}), 403
         
-        # Verify course exists
-        course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == course_id), None)
-        if not course:
-            # Also check by code
-            course = next((c for c in getattr(app_state, 'courses', []) if c['code'] == course_id), None)
-            if course:
+        # First check if course_id is actually a code
+        course_result = Database.get_course_by_id(course_id)
+        if course_result.get('error') or not course_result.get('data'):
+            # Try as code
+            course_result = Database.get_course_by_code(course_code=course_id)
+            if course_result.get('data'):
+                course = course_result['data'][0]
                 course_id = course['id']
+            else:
+                return jsonify({'error': 'Course not found'}), 404
+        else:
+            course = course_result['data'][0]
         
-        if not course:
-            return jsonify({'error': 'Course not found'}), 404
+        # Add enrollment to Supabase
+        enroll_result = Database.create_enrollment(user_id, course_id)
         
-        # Add enrollment
-        if not hasattr(app_state, 'enrollments'):
-            app_state.enrollments = {}
-        
-        enrollments = app_state.enrollments
-        if str(user_id) not in enrollments:
-            enrollments[str(user_id)] = []
-        
-        if course_id not in enrollments[str(user_id)]:
-            enrollments[str(user_id)].append(course_id)
-            course['students_count'] = course.get('students_count', 0) + 1
+        if enroll_result.get('error'):
+            # Check if already enrolled (unique constraint would fail)
+            if 'duplicate' in str(enroll_result.get('error')).lower():
+                return jsonify({'error': 'Already enrolled in this course'}), 400
+            logger.error(f"Enrollment error: {enroll_result['error']}")
+            return jsonify({'error': 'Failed to enroll'}), 400
         
         return jsonify({'success': True, 'course': course})
     except Exception as e:
@@ -2707,12 +2885,12 @@ def add_course_enrollment(user_id, course_id):
 def get_course_by_code(course_code):
     """Get course by course code."""
     try:
-        course_code = course_code.upper()
-        courses = getattr(app_state, 'courses', [])
-        course = next((c for c in courses if c['code'].upper() == course_code), None)
+        result = Database.get_course_by_code(course_code)
         
-        if not course:
+        if result.get('error') or not result.get('data'):
             return jsonify({'error': 'Course not found'}), 404
+        
+        course = result['data'][0]
         
         return jsonify({
             'id': course['id'],
@@ -2729,7 +2907,11 @@ def get_course_by_code(course_code):
 def get_all_courses():
     """Get all courses."""
     try:
-        courses = getattr(app_state, 'courses', [])
+        result = Database.get_courses()
+        if result.get('error'):
+            courses = []
+        else:
+            courses = result.get('data') or []
         return jsonify(courses)
     except Exception as e:
         logger.error(f"Get courses error: {e}")
@@ -2740,11 +2922,12 @@ def get_all_courses():
 def get_course_by_id(course_id):
     """Get course by ID."""
     try:
-        course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == course_id), None)
+        result = Database.get_course_by_id(course_id)
         
-        if not course:
+        if result.get('error') or not result.get('data'):
             return jsonify({'error': 'Course not found'}), 404
         
+        course = result['data'][0]
         return jsonify(course)
     except Exception as e:
         logger.error(f"Get course error: {e}")
