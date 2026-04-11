@@ -14,19 +14,26 @@ import logging
 import uuid
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any, Tuple
 import threading
 import queue
 import time
 
+# Authentication imports
+import secrets
+from functools import wraps
+
 # Fix for Python 3.14 + google.protobuf compatibility
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 
 # Flask imports
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, abort, redirect
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+
+# HTTP requests for Node.js API calls
+import requests
 
 # Configure logging
 logging.basicConfig(
@@ -61,9 +68,22 @@ except ImportError as e:
 # FLASK APPLICATION SETUP
 # ============================================================================
 
+# Get base directory and set up template paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Configure Flask to use frontend templates
+FRONTEND_TEMPLATES = os.path.join(BASE_DIR, '..', 'frontend', 'templates')
+FRONTEND_STATIC = os.path.join(BASE_DIR, '..', 'frontend', 'static')
+FRONTEND_INSTRUCTOR = os.path.join(BASE_DIR, '..', 'frontend', 'instructor')
+
 app = Flask(__name__, 
-            template_folder='templates',
-            static_folder='static')
+            template_folder=FRONTEND_TEMPLATES,
+            static_folder=FRONTEND_STATIC)
+
+# Add instructor static files path
+app.static_folder = FRONTEND_STATIC
+app.static_url_path = '/static'
+
 CORS(app)
 
 # Configuration
@@ -1937,6 +1957,203 @@ def retrieve_and_answer(query: str, max_results: int = 5) -> Dict[str, Any]:
 
 
 # ============================================================================
+# AUTHENTICATION SYSTEM (Supabase-backed via Node.js API)
+# ============================================================================
+
+# Node.js API URL (runs on port 3000)
+NODE_API_URL = "http://localhost:3000"
+
+
+class User:
+    """Simple user model for authentication."""
+    
+    def __init__(self, user_id: str, email: str, full_name: str, password_hash: str, role: str):
+        self.user_id = user_id
+        self.email = email
+        self.full_name = full_name
+        self.password_hash = password_hash
+        self.role = role  # 'student' or 'teacher'
+        self.created_at = datetime.now()
+        self.last_login = None
+    
+    def to_dict(self):
+        return {
+            'user_id': self.user_id,
+            'email': self.email,
+            'full_name': self.full_name,
+            'role': self.role,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_login': self.last_login.isoformat() if self.last_login else None
+        }
+
+
+class AuthSession:
+    """Session manager that stores users in Supabase via Node.js API."""
+    
+    def __init__(self):
+        self.sessions = {}  # token -> user_id
+        # Cache users locally for faster auth
+        self.users_cache = {}  # user_id -> User
+    
+    def create_user(self, email: str, full_name: str, password: str, role: str) -> tuple:
+        """Create a new user in Supabase. Returns (user, error)."""
+        try:
+            # First, check if user exists in Supabase
+            response = requests.get(f"{NODE_API_URL}/users", timeout=5)
+            if response.status_code == 200:
+                existing_users = response.json()
+                for u in existing_users:
+                    if u.get('email', '').lower() == email.lower():
+                        return None, 'Email already registered'
+            
+            # Create user in Supabase
+            user_data = {
+                'email': email.lower().strip(),
+                'password': password,  # Will be hashed in Flask for now
+                'full_name': full_name.strip(),
+                'role': role
+            }
+            
+            response = requests.post(
+                f"{NODE_API_URL}/auth/register",
+                json=user_data,
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            
+            if response.status_code in [200, 201]:
+                data = response.json()
+                user = User(
+                    user_id=str(data.get('id')),
+                    email=email.lower(),
+                    full_name=full_name.strip(),
+                    password_hash=self._hash_password(password),
+                    role=role
+                )
+                self.users_cache[user.user_id] = user
+                logger.info(f"User created in Supabase: {email} ({role})")
+                return user, None
+            else:
+                return None, f"Failed to create user: {response.text}"
+                
+        except requests.exceptions.ConnectionError:
+            return None, "Database server not running. Please start the Node.js server."
+        except Exception as e:
+            logger.error(f"Error creating user: {e}")
+            return None, str(e)
+    
+    def authenticate(self, email: str, password: str) -> tuple:
+        """Authenticate user from Supabase. Returns (user, error)."""
+        try:
+            # Get user from Supabase
+            response = requests.get(f"{NODE_API_URL}/users", timeout=5)
+            
+            if response.status_code != 200:
+                return None, "Database connection error"
+            
+            users = response.json()
+            password_hash = self._hash_password(password)
+            
+            # Find user with matching email and password
+            for u in users:
+                if u.get('email', '').lower() == email.lower():
+                    stored_hash = u.get('password_hash', '')
+                    if stored_hash == password_hash:
+                        user = User(
+                            user_id=str(u.get('id')),
+                            email=u.get('email', ''),
+                            full_name=u.get('full_name', ''),
+                            password_hash=stored_hash,
+                            role=u.get('role', 'student')
+                        )
+                        user.last_login = datetime.now()
+                        self.users_cache[user.user_id] = user
+                        logger.info(f"User authenticated: {email} ({user.role})")
+                        return user, None
+                    else:
+                        return None, 'Invalid email or password'
+            
+            return None, 'Invalid email or password'
+            
+        except requests.exceptions.ConnectionError:
+            return None, "Database server not running. Please start the Node.js server."
+        except Exception as e:
+            logger.error(f"Auth error: {e}")
+            return None, "Authentication failed"
+    
+    def get_user_by_id(self, user_id: str):
+        """Get user from cache or database."""
+        if user_id in self.users_cache:
+            return self.users_cache[user_id]
+        
+        try:
+            response = requests.get(f"{NODE_API_URL}/users/{user_id}", timeout=5)
+            if response.status_code == 200:
+                u = response.json()
+                user = User(
+                    user_id=str(u.get('id')),
+                    email=u.get('email', ''),
+                    full_name=u.get('full_name', ''),
+                    password_hash=u.get('password_hash', ''),
+                    role=u.get('role', 'student')
+                )
+                self.users_cache[user.user_id] = user
+                return user
+        except:
+            pass
+        return None
+    
+    def get_session(self, token: str):
+        """Get user from session token."""
+        user_id = self.sessions.get(token)
+        if not user_id:
+            return None
+        return self.get_user_by_id(user_id)
+    
+    def create_session(self, user: User) -> str:
+        """Create session token for user."""
+        token = secrets.token_hex(32)
+        self.sessions[token] = user.user_id
+        return token
+    
+    def delete_session(self, token: str) -> bool:
+        """Delete session (logout)."""
+        if token in self.sessions:
+            del self.sessions[token]
+            return True
+        return False
+    
+    def _hash_password(self, password: str) -> str:
+        """Simple SHA256 password hashing (matches Node.js)."""
+        return hashlib.sha256(password.encode()).hexdigest()
+
+
+# Initialize auth system
+auth_session = AuthSession()
+
+# Seed some test users for development
+def _seed_test_users():
+    """Create test users for development."""
+    # Teacher account
+    auth_session.create_user(
+        'teacher@cpts421.edu',
+        'Dr. Instructor',
+        'teacher123',
+        'teacher'
+    )
+    # Student account
+    auth_session.create_user(
+        'student@cpts421.edu', 
+        'Student User',
+        'student123',
+        'student'
+    )
+    logger.info("Test users seeded: teacher@cpts421.edu / teacher123, student@cpts421.edu / student123")
+
+_seed_test_users()
+
+
+# ============================================================================
 # FLASK ROUTES
 # ============================================================================
 
@@ -1945,10 +2162,205 @@ def login():
     """Render the login page."""
     return render_template('login.html')
 
+
+# ============================================================================
+# AUTH ROUTES
+# ============================================================================
+
+@app.route('/auth/register', methods=['POST'])
+def register():
+    """
+    Register a new user.
+    
+    Expected JSON: { full_name, email, password, role }
+    Returns: { success: true/false, user?: {...}, error?: "..." }
+    """
+    try:
+        data = request.get_json()
+        
+        full_name = data.get('full_name', '').strip()
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+        role = data.get('role', 'student')
+        
+        # Validate
+        if not full_name or not email or not password:
+            return jsonify({'success': False, 'error': 'All fields are required'}), 400
+        
+        # Create user
+        user, error = auth_session.create_user(email, full_name, password, role)
+        
+        if error:
+            return jsonify({'success': False, 'error': error}), 400
+        
+        return jsonify({
+            'success': True,
+            'user': user.to_dict()
+        }), 201
+        
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/auth/login', methods=['POST'])
+def login_auth():
+    """
+    Authenticate user and create session.
+    
+    Expected JSON: { email, password }
+    Returns: { success: true/false, user?: {...}, redirect?: "/..." }
+    """
+    try:
+        data = request.get_json()
+        
+        email = data.get('email', '').strip()
+        password = data.get('password', '')
+        
+        if not email or not password:
+            return jsonify({'success': False, 'error': 'Email and password required'}), 400
+        
+        # Authenticate
+        user, error = auth_session.authenticate(email, password)
+        
+        if error:
+            return jsonify({'success': False, 'error': error}), 401
+        
+        # Create session token
+        token = auth_session.create_session(user)
+        
+        # Determine redirect based on role
+        if user.role == 'teacher':
+            redirect_url = '/instructor/dashboard'
+        else:
+            redirect_url = '/student/home'
+        
+        # Set session cookie
+        response = jsonify({
+            'success': True,
+            'user': user.to_dict(),
+            'redirect': redirect_url
+        })
+        response.set_cookie('session_token', token, httponly=True, samesite='Lax', max_age=86400)
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/auth/me', methods=['GET'])
+def get_current_user():
+    """Get current authenticated user."""
+    try:
+        # Get session token from cookie
+        token = request.cookies.get('session_token')
+        
+        if not token:
+            return jsonify({'authenticated': False}), 401
+        
+        user = auth_session.get_session(token)
+        
+        if not user:
+            return jsonify({'authenticated': False}), 401
+        
+        return jsonify({
+            'authenticated': True,
+            'user': user.to_dict()
+        })
+        
+    except Exception as e:
+        logger.error(f"Session check error: {e}")
+        return jsonify({'authenticated': False}), 401
+
+
+@app.route('/auth/logout', methods=['POST', 'GET'])
+def logout_auth():
+    """Logout current user."""
+    try:
+        token = request.cookies.get('session_token')
+        
+        if token:
+            auth_session.delete_session(token)
+        
+        response = jsonify({'success': True, 'redirect': '/login'})
+        response.set_cookie('session_token', '', expires=0)
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/')
 def index():
-    """Render the main page."""
-    return render_template('index.html')
+    """Render the login page."""
+    return redirect('/login')
+
+
+@app.route('/login')
+def login_page():
+    """Render the login page."""
+    return render_template('login.html')
+
+
+@app.route('/student/home')
+def student_home():
+    """Student dashboard/home page."""
+    return render_template('studentHome.html')
+
+
+@app.route('/instructor/dashboard')
+def instructor_dashboard():
+    """Instructor dashboard page."""
+    try:
+        template_path = os.path.join(BASE_DIR, '..', 'frontend', 'instructor', 'templates', 'instructor', 'dashboard.html')
+        with open(template_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Replace static path for instructor CSS
+        content = content.replace('{{ url_for(\'static\', filename=\'css/instructor.css\') }}', '/static/instructor/css/instructor.css')
+        
+        # Simple template rendering with user info placeholder
+        return content.replace('{{user_name}}', 'Instructor').replace('{{course_count}}', '0')
+    except Exception as e:
+        logger.error(f"Instructor dashboard error: {e}")
+        abort(500)
+
+
+@app.route('/instructor/course/<course_id>')
+def instructor_course(course_id):
+    """Instructor course view."""
+    try:
+        template_path = os.path.join(BASE_DIR, '..', 'frontend', 'instructor', 'templates', 'instructor', 'course.html')
+        with open(template_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Fix static path for instructor CSS
+        content = content.replace('{{ url_for(\'static\', filename=\'css/instructor.css\') }}', '/static/instructor/css/instructor.css')
+        
+        return content.replace('{{course_id}}', course_id)
+    except Exception as e:
+        logger.error(f"Instructor course error: {e}")
+        abort(500)
+
+
+@app.route('/instructor/analytics/<course_id>')
+def instructor_analytics(course_id):
+    """Instructor analytics view."""
+    try:
+        template_path = os.path.join(BASE_DIR, '..', 'frontend', 'instructor', 'templates', 'instructor', 'analytics.html')
+        with open(template_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Fix static path for instructor CSS
+        content = content.replace('{{ url_for(\'static\', filename=\'css/instructor.css\') }}', '/static/instructor/css/instructor.css')
+        
+        return content.replace('{{course_id}}', course_id)
+    except Exception as e:
+        logger.error(f"Instructor analytics error: {e}")
+        abort(500)
 
 @app.route('/api/health')
 def health_check():

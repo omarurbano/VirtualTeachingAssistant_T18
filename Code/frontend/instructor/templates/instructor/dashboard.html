@@ -318,5 +318,25 @@
     document.getElementById('createCourseSuccess').style.display = 'block';
   });
 </script>
+
+<!-- Logout Handler -->
+<script>
+  document.querySelectorAll('a[href="#"]').forEach(link => {
+    if (link.textContent.includes('logout')) {
+      link.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+          const res = await fetch('/auth/logout', { method: 'POST' });
+          const data = await res.json();
+          if (data.success) {
+            window.location.href = data.redirect || '/login';
+          }
+        } catch (err) {
+          console.error('Logout failed:', err);
+        }
+      });
+    }
+  });
+</script>
 </body>
 </html>

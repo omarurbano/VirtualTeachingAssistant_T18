@@ -106,6 +106,14 @@ async function addCourse(){
 }
 
 function logout(){
-    sessionStorage.clear();
-    //window.location.href = "http://localhost:5000/login";
+    fetch('/auth/logout', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            sessionStorage.clear();
+            window.location.href = data.redirect || '/login';
+        })
+        .catch(err => {
+            console.error('Logout failed:', err);
+            window.location.href = '/login';
+        });
 }

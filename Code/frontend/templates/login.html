@@ -676,9 +676,10 @@
 
                 if (res.ok) {
                     showStatus('signinStatus', 'success', `welcome back, ${data.user.full_name || data.user.email}`);
-                    // Redirect to main app after brief delay
+                    // Redirect based on role (teacher -> dashboard, student -> home)
+                    const redirectUrl = data.redirect || (data.user.role === 'teacher' ? '/instructor/dashboard' : '/student/home');
                     setTimeout(() => {
-                        window.location.href = '/';
+                        window.location.href = redirectUrl;
                     }, 600);
                 } else {
                     showStatus('signinStatus', 'error', data.error || 'login failed');
@@ -740,9 +741,10 @@
 
                 if (res.ok) {
                     showStatus('signupStatus', 'success', `account created. redirecting...`);
-                    // Auto-login, redirect to main app
+                    // After registration, login and redirect based on role
+                    const redirectUrl = data.user.role === 'teacher' ? '/instructor/dashboard' : '/student/home';
                     setTimeout(() => {
-                        window.location.href = '/';
+                        window.location.href = redirectUrl;
                     }, 600);
                 } else {
                     showStatus('signupStatus', 'error', data.error || 'registration failed');

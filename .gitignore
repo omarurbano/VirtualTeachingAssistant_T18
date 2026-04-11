@@ -30,3 +30,6 @@ Thumbs.db
 # environment variables
 .env
 nul
+
+# Node.js
+node_modules/

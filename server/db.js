@@ -1,12 +1,8 @@
-const { Pool } = require("pg");
-const db_pass = process.env.DB_PASS;
+const { createClient } = require("@supabase/supabase-js");
 
-const pool = new Pool({
-  user: "postgres",
-  host: "localhost",
-  database: "vta26",
-  password: db_pass,
-  port: 5433,
-});
+const supabaseUrl = "https://ehqjplwrrifezdwlsdbk.supabase.co";
+const supabaseKey = "sb_publishable_rQZPfUr5fzxlGra3F1drJQ_qOUlx8Jo";
 
-module.exports = pool;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+module.exports = supabase;
