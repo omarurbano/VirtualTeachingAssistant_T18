@@ -2378,7 +2378,7 @@ def create_course():
             'id': course_id,
             'name': name,
             'code': code,
-            'teacher_id': user.id,
+            'teacher_id': user.user_id,
             'created_at': datetime.now().isoformat(),
             'students_count': 0,
             'materials_count': 0,
@@ -2468,10 +2468,9 @@ def regenerate_course_code(course_id):
         if not user or user.role != 'teacher':
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Generate new code
+        # Generate new 6-digit code
         import secrets
-        chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-        new_code = f"{secrets.choice(chars)}{secrets.randint(1,9)}-{secrets.choice(chars)}{secrets.randint(1,9)}{secrets.choice(chars)}"
+        new_code = f"{secrets.randbelow(900000) + 100000}"  # Random 6-digit number
         
         # Update course
         courses = getattr(app_state, 'courses', [])
@@ -2731,7 +2730,7 @@ def get_student_courses(user_id):
 
 @app.route('/addCourse/<user_id>/<course_id>', methods=['POST'])
 def add_course_enrollment(user_id, course_id):
-    """Add course enrollment for a student."""
+    """Add course enrollment for a student by course code."""
     try:
         # Check authentication
         token = request.cookies.get('session_token')
@@ -2742,32 +2741,42 @@ def add_course_enrollment(user_id, course_id):
         if not user:
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Verify user matches or is teacher
-        if str(user.id) != str(user_id) and user.role != 'teacher':
-            return jsonify({'error': 'Forbidden'}), 403
+        # Teachers can enroll students; students enroll themselves
+        # Use logged-in user's ID
+        actual_user_id = user.user_id
+        actual_user_role = user.role
         
-        # Verify course exists
-        course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == course_id), None)
+        # Verify course exists (by ID or by code)
+        course = None
+        course_code = str(course_id)
+        
+        # Try as course ID first
+        all_courses = getattr(app_state, 'courses', [])
+        course = next((c for c in all_courses if c['id'] == course_id), None)
+        
+        # If not found, try as numeric code
         if not course:
-            # Also check by code
-            course = next((c for c in getattr(app_state, 'courses', []) if c['code'] == course_id), None)
-            if course:
-                course_id = course['id']
+            course = next((c for c in all_courses if str(c.get('code', '')) == course_code), None)
         
         if not course:
-            return jsonify({'error': 'Course not found'}), 404
+            return jsonify({'error': 'Course not found. Check the code and try again.'}), 404
+        
+        real_course_id = course['id']
         
         # Add enrollment
         if not hasattr(app_state, 'enrollments'):
             app_state.enrollments = {}
         
         enrollments = app_state.enrollments
-        if str(user_id) not in enrollments:
-            enrollments[str(user_id)] = []
+        user_key = str(actual_user_id)
         
-        if course_id not in enrollments[str(user_id)]:
-            enrollments[str(user_id)].append(course_id)
+        if user_key not in enrollments:
+            enrollments[user_key] = []
+        
+        if real_course_id not in enrollments[user_key]:
+            enrollments[user_key].append(real_course_id)
             course['students_count'] = course.get('students_count', 0) + 1
+            logger.info(f"Student {user.email} enrolled in {course['name']}")
         
         return jsonify({'success': True, 'course': course})
     except Exception as e:
