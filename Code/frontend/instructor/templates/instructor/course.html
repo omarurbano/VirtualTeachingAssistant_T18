@@ -448,7 +448,7 @@
   }
 
   // ── Drive link feedback ───────────────────────────────────────
-  document.getElementById('driveLinkBtn').addEventListener('click', () => {
+  document.getElementById('driveLinkBtn').addEventListener('click', async () => {
     const link = document.getElementById('driveLink').value.trim();
     const fb   = document.getElementById('driveFeedback');
 
@@ -456,13 +456,37 @@
       showFeedback(fb, '> ERROR: paste a Google Drive folder URL.', 'error');
       return;
     }
-    if (!link.includes('drive.google.com')) {
+    if (!link.includes('drive.google.com') && !link.includes('docs.google.com')) {
       showFeedback(fb, '> ERROR: URL does not appear to be a Google Drive link.', 'error');
       return;
     }
-    // TODO: Implement OAuth flow to Google Drive
-    showFeedback(fb, '> Drive integration coming soon!', 'warning');
-    document.getElementById('driveLink').value = '';
+
+    try {
+      showFeedback(fb, '> Connecting to Google Drive...', 'info');
+      
+      const response = await fetch('/drive/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folder_url: link,
+          course_id: courseId
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        showFeedback(fb, `> ✓ Drive connected! Folder ID: ${data.folder_id}`, 'success');
+        document.getElementById('driveLink').value = '';
+        
+        // Refresh materials list
+        loadMaterials();
+      } else {
+        showFeedback(fb, `> ERROR: ${data.error || 'Failed to connect Drive'}`, 'error');
+      }
+    } catch (error) {
+      showFeedback(fb, '> ERROR: Failed to connect Drive', 'error');
+    }
   });
 
   // ── Export list ───────────────────────────────────────────────

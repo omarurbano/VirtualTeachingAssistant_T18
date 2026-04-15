@@ -396,6 +396,124 @@
 <script>
 'use strict';
 
+/* ── LIVE DATA FROM API ─────────────────────────────────────────────────────── */
+// Get course ID from URL or use default
+const courseId = window.location.pathname.split('/').pop() || 'cpts451';
+
+// Global data holders
+let LIVE_ANALYTICS = null;
+let LIVE_QUERIES = [];
+
+/* ── Fetch analytics from API ───────────────────────────────────── */
+async function fetchAnalytics() {
+  try {
+    const response = await fetch(`/api/analytics/${courseId}`);
+    if (response.ok) {
+      LIVE_ANALYTICS = await response.json();
+      updateOverviewBar();
+      updateHeatmap();
+      updateEngagementChart();
+      console.log('Live analytics loaded:', LIVE_ANALYTICS);
+    } else {
+      console.warn('Analytics API returned', response.status);
+    }
+  } catch (err) {
+    console.error('Failed to fetch analytics:', err);
+  }
+}
+
+/* ── Fetch queries from API ──────────────────────────────────────── */
+async function fetchQueries() {
+  try {
+    const response = await fetch(`/api/analytics/${courseId}/queries`);
+    if (response.ok) {
+      const data = await response.json();
+      LIVE_QUERIES = data.queries || [];
+      renderQueries(null);
+      console.log('Live queries loaded:', LIVE_QUERIES.length);
+    }
+  } catch (err) {
+    console.error('Failed to fetch queries:', err);
+  }
+}
+
+/* ── Update overview bar with live data ─────────────────────── */
+function updateOverviewBar() {
+  if (!LIVE_ANALYTICS) return;
+  
+  const overviewBar = document.querySelector('.overview-bar');
+  if (!overviewBar) return;
+  
+  overviewBar.innerHTML = `
+    <span class="overview-prompt">&gt;</span>
+    <span class="overview-item overview-course">${courseId.toUpperCase()}</span>
+    <span class="overview-divider">|</span>
+    <span class="overview-item"><span class="overview-val">${LIVE_ANALYTICS.active_students || 0}</span> students</span>
+    <span class="overview-divider">|</span>
+    <span class="overview-item"><span class="overview-val">${LIVE_ANALYTICS.docs_uploaded || 0}</span> documents</span>
+    <span class="overview-divider">|</span>
+    <span class="overview-item"><span class="overview-val">${LIVE_ANALYTICS.total_queries || 0}</span> queries</span>
+    <span class="overview-divider">|</span>
+    <span class="overview-item overview-range">Last 7 days</span>
+    <span class="overview-cursor cursor-blink">█</span>
+  `;
+}
+
+/* ── Update heatmap with live data ──────────────────────────────────────── */
+function updateHeatmap() {
+  if (!LIVE_ANALYTICS || !LIVE_ANALYTICS.confusing_topics) return;
+  
+  const heatmapTable = document.getElementById('heatmapTable');
+  if (!heatmapTable) return;
+  
+  const tbody = heatmapTable.querySelector('tbody');
+  if (!tbody) return;
+  
+  tbody.innerHTML = LIVE_ANALYTICS.confusing_topics.map(topic => `
+    <tr class="heatmap-row" data-topic="${topic.topic}">
+      <td class="topic-name-cell">${topic.topic}</td>
+      <td class="q-count-cell">${topic.count}</td>
+      <td><span class="diff-badge diff-${topic.difficulty.toLowerCase()}">${topic.difficulty}</span></td>
+    </tr>
+  `).join('');
+  
+  // Re-attach click handlers
+  attachHeatmapHandlers();
+}
+
+/* ── Update engagement chart with live data ───────────────────── */
+function updateEngagementChart() {
+  if (!LIVE_ANALYTICS || !LIVE_ANALYTICS.engagement_trend) return;
+  
+  const chart = Chart.getChart(document.getElementById('engagementChart'));
+  if (!chart) return;
+  
+  const trend = LIVE_ANALYTICS.engagement_trend;
+  chart.data.labels = trend.map(d => d.date.slice(5)); // MM-DD
+  chart.data.datasets[0].data = trend.map(d => d.count);
+  chart.update();
+}
+
+/* ── Re-attach heatmap click handlers ─────────────────────────── */
+function attachHeatmapHandlers() {
+  document.querySelectorAll('.heatmap-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const topic = row.dataset.topic;
+      if (activeTopic === topic) {
+        clearFilter();
+        return;
+      }
+      activeTopic = topic;
+      document.querySelectorAll('.heatmap-row').forEach(r => r.classList.remove('heatmap-row-active'));
+      row.classList.add('heatmap-row-active');
+      document.getElementById('queryHeaderText').textContent = `queries :: ${topic}`;
+      document.getElementById('clearFilterBtn').style.display = 'inline-flex';
+      document.getElementById('queryBlock').scrollIntoView({ behavior:'smooth', block:'start' });
+      renderQueries(topic);
+    });
+  });
+}
+
 /* ── Shared chart defaults (tokens match instructor.css :root) ── */
 Chart.defaults.font.family = "'JetBrains Mono', 'Courier New', monospace";
 Chart.defaults.font.size   = 11;
@@ -412,15 +530,11 @@ const TOOLTIP_BG  = '#111';              /* --surface     */
 new Chart(document.getElementById('topicChart'), {
   type: 'bar',
   data: {
-    labels: ['CNN Architecture', 'Regularization', 'Gradient Descent', 'Loss Functions', 'Backpropagation'],
+    labels: ['Loading...'],
     datasets: [{
-      data: [12, 15, 28, 30, 42],
+      data: [0],
       backgroundColor: [
         'rgba(0,188,212,0.25)',
-        'rgba(0,188,212,0.38)',
-        'rgba(0,188,212,0.52)',
-        'rgba(0,188,212,0.68)',
-        'rgba(0,188,212,0.88)',
       ],
       borderColor: ACCENT,
       borderWidth: 1,
@@ -515,26 +629,14 @@ new Chart(document.getElementById('moduleChart'), {
   }
 });
 
-/* ── Query data ───────────────────────────────────────────────── */
-const QUERIES = [
-  { topic:'Backpropagation',  time:'2025-04-06 15:41', student:'STU_7F2A', text:'Why does the gradient vanish in deep networks during backprop?',            response:'Vanishing gradients occur when small derivatives multiply across many layers, shrinking the signal exponentially. Techniques like ReLU activations and batch normalisation...', sources:'lecture3.pdf p.7',    failed:false },
-  { topic:'Loss Functions',   time:'2025-04-06 15:29', student:'STU_C3D1', text:'What is the difference between cross-entropy and MSE for classification?',   response:'Cross-entropy penalises confident wrong predictions more aggressively than MSE, making it better suited for classification tasks where probabilities are...', sources:'lecture4.pdf p.2',    failed:false },
-  { topic:'Backpropagation',  time:'2025-04-06 14:55', student:'STU_3A9F', text:'Can you explain the chain rule as it applies to neural network layers?',      response:'Each layer computes a local gradient; backprop chains these together via the chain rule so the loss gradient flows from output back to input...', sources:'lecture3.pdf p.5',    failed:false },
-  { topic:'Gradient Descent', time:'2025-04-06 14:33', student:'STU_9C3E', text:'How do I choose the right learning rate for gradient descent?',               response:'A learning rate that is too high causes oscillation; too low means slow convergence. Common strategies include learning rate schedules and adaptive methods like Adam...', sources:'lecture5.pdf p.11',   failed:false },
-  { topic:'Regularization',   time:'2025-04-06 14:12', student:'STU_B12C', text:'What is L2 regularisation doing geometrically?',                              response:'L2 regularisation adds a term proportional to the squared magnitude of weights, shrinking them toward zero and preferring solutions near the origin in weight space...', sources:'lecture6.pdf p.3',    failed:false },
-  { topic:'Backpropagation',  time:'2025-04-06 13:50', student:'STU_F91B', text:'How does automatic differentiation differ from symbolic differentiation?',    response:'', sources:'',  failed:true  },
-  { topic:'CNN Architecture', time:'2025-04-06 13:22', student:'STU_4F08', text:'What is the purpose of max pooling in a CNN?',                                response:'Max pooling down-samples feature maps by retaining the maximum value in each pool window, reducing spatial dimensions while preserving dominant activations...', sources:'lecture7.pdf p.8',    failed:false },
-  { topic:'Loss Functions',   time:'2025-04-06 13:08', student:'STU_A44E', text:'Is focal loss only used in object detection?',                                response:'Focal loss was introduced for dense object detection to down-weight easy examples, but it can be applied to any imbalanced classification problem...', sources:'lecture4.pdf p.9',    failed:false },
-  { topic:'Gradient Descent', time:'2025-04-06 12:47', student:'STU_2D61', text:'What is momentum and why does it help optimisation?',                         response:'Momentum accumulates a velocity vector in the direction of persistent gradient, dampening oscillations and accelerating progress in consistent directions...', sources:'lecture5.pdf p.6',    failed:false },
-  { topic:'Regularization',   time:'2025-04-06 12:30', student:'STU_E77D', text:'Does dropout count as regularisation?',                                       response:'Yes. Dropout randomly zeroes activations during training, acting as an ensemble method that prevents co-adaptation of neurons, which is a form of regularisation...', sources:'lecture6.pdf p.14',   failed:false },
-  { topic:'CNN Architecture', time:'2025-04-06 12:01', student:'STU_3A9F', text:'What is the receptive field of a convolutional layer?',                       response:'', sources:'',  failed:true  },
-  { topic:'Backpropagation',  time:'2025-04-05 16:45', student:'STU_C3D1', text:'Why do we initialise weights randomly instead of to zero?',                   response:'Zero initialisation causes symmetry: all neurons compute identical gradients, so the network cannot differentiate. Random init breaks symmetry...', sources:'lecture3.pdf p.2',    failed:false },
-];
-
-/* ── Render queries ───────────────────────────────────────────── */
+/* ── Render queries from LIVE data ────────────────────────────────────── */
 function renderQueries(filterTopic) {
   const list = document.getElementById('queryList');
-  const data = filterTopic ? QUERIES.filter(q => q.topic === filterTopic) : QUERIES;
+  
+  // Use live data if available, otherwise show placeholder
+  const data = LIVE_QUERIES.length > 0 
+    ? (filterTopic ? LIVE_QUERIES.filter(q => q.topic === filterTopic) : LIVE_QUERIES)
+    : [];
   list.innerHTML = '';
 
   data.forEach((q, i) => {
@@ -621,7 +723,16 @@ function clearFilter() {
 }
 
 /* ── Initial render ───────────────────────────────────────────── */
-renderQueries(null);
+(async function init() {
+  // Show loading states
+  document.getElementById('queryHeaderText').textContent = 'recent_queries --loading...';
+  
+  // Fetch live data from API
+  await Promise.all([fetchAnalytics(), fetchQueries()]);
+  
+  // Final render
+  document.getElementById('queryHeaderText').textContent = 'recent_queries --live';
+})();
 </script>
 
 <!-- Logout Handler -->
