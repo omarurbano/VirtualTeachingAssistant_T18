@@ -35,6 +35,21 @@ async function init() {
     await loadFiles();
     await loadImages();
     autoResizeTextarea();
+    
+    // Check for course context in URL (student joined course)
+    const urlParams = new URLSearchParams(window.location.search);
+    const courseId = urlParams.get('course');
+    
+    if (courseId) {
+        window.currentCourseId = courseId;
+        console.log('VTA initialized for course:', courseId);
+        
+        // Show course context in UI
+        const statusText = document.getElementById('statusText');
+        if (statusText) {
+            statusText.textContent = `course: ${courseId}`;
+        }
+    }
 }
 
 function autoResizeTextarea() {
@@ -408,11 +423,19 @@ async function sendMessage() {
     loadingIndicator.classList.add('active');
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
+    // Get course_id from URL or global variable
+    const urlParams = new URLSearchParams(window.location.search);
+    const courseId = urlParams.get('course') || window.currentCourseId || null;
+    
     try {
         const response = await fetch(`${API_BASE}/api/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: message, max_results: 5 })
+            body: JSON.stringify({ 
+                question: message, 
+                max_results: 5,
+                course_id: courseId  // Send course_id for data leakage prevention
+            })
         });
         
         const data = await response.json();
@@ -421,6 +444,11 @@ async function sendMessage() {
         
         if (data.success) {
             addMessageWithCitations('ai', data.answer, data.citations);
+            // Show course context in system message if available
+            if (courseId && !window.courseContextShown) {
+                window.courseContextShown = true;
+                addMessage('system', `> Answering from course: ${courseId}`);
+            }
         } else {
             addMessage('ai', `> error: ${data.error}`);
         }
