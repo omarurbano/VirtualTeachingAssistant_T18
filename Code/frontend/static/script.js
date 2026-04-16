@@ -1,7 +1,8 @@
 // CPT_S 421 VTA - Document RAG System
 // Terminal-style chat interface
 
-const API_BASE = '';
+const FLASK_BASE = 'http://localhost:5001';
+const NODE_BASE  = 'http://localhost:3000';
 
 // DOM Elements
 const welcomeScreen = document.getElementById('welcomeScreen');
@@ -101,7 +102,7 @@ function setupEventListeners() {
 
 async function checkHealth() {
     try {
-        const response = await fetch(`${API_BASE}/api/health`);
+        const response = await fetch(`${FLASK_BASE}/api/health`);
         const data = await response.json();
         
         if (data.sentence_transformers) {
@@ -144,7 +145,7 @@ async function uploadFiles(files) {
             
             console.log(`Uploading: ${file.name}`);
             
-            const response = await fetch(`${API_BASE}/api/upload`, {
+            const response = await fetch(`${FLASK_BASE}/api/upload`, {
                 method: 'POST',
                 body: formData
             });
@@ -243,7 +244,7 @@ async function uploadImages(files) {
             // Show a temporary "processing" indicator for this specific image
             const tempToast = showToast(`Analyzing ${file.name}... (this may take a few moments)`);
             
-            const response = await fetch(`${API_BASE}/api/upload/image`, {
+            const response = await fetch(`${FLASK_BASE}/api/upload/image`, {
                 method: 'POST',
                 body: formData
             });
@@ -317,7 +318,7 @@ async function clearAllImages() {
     try {
         // Clear from server
         for (const img of uploadedImages) {
-            await fetch(`${API_BASE}/api/images/${img.file_id}`, {
+            await fetch(`${FLASK_BASE}/api/images/${img.file_id}`, {
                 method: 'DELETE'
             });
         }
@@ -332,7 +333,7 @@ async function clearAllImages() {
 
 async function loadFiles() {
     try {
-        const response = await fetch(`${API_BASE}/api/files`);
+        const response = await fetch(`${FLASK_BASE}/api/files`);
         const data = await response.json();
         
         if (data.success && data.files && data.files.length > 0) {
@@ -352,7 +353,7 @@ async function loadFiles() {
 
 async function loadImages() {
     try {
-        const response = await fetch(`${API_BASE}/api/images`);
+        const response = await fetch(`${FLASK_BASE}/api/images`);
         const data = await response.json();
         
         if (data.success && data.images && data.images.length > 0) {
@@ -375,7 +376,7 @@ async function loadImages() {
 
 async function clearAllDocuments() {
     try {
-        const response = await fetch(`${API_BASE}/api/clear`, {
+        const response = await fetch(`${FLASK_BASE}/api/clear`, {
             method: 'POST'
         });
         
@@ -428,7 +429,7 @@ async function sendMessage() {
     const courseId = urlParams.get('course') || window.currentCourseId || null;
     
     try {
-        const response = await fetch(`${API_BASE}/api/query`, {
+        const response = await fetch(`${FLASK_BASE}/api/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 

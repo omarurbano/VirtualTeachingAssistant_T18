@@ -396,6 +396,9 @@
 <script>
 'use strict';
 
+const NODE_BASE  = 'http://localhost:3000';
+const FLASK_BASE = 'http://localhost:5001';
+
 /* ── LIVE DATA FROM API ─────────────────────────────────────────────────────── */
 // Get course ID from URL or use default
 const courseId = window.location.pathname.split('/').pop() || 'cpts451';
@@ -404,33 +407,55 @@ const courseId = window.location.pathname.split('/').pop() || 'cpts451';
 let LIVE_ANALYTICS = null;
 let LIVE_QUERIES = [];
 
-/* ── Fetch analytics from API ───────────────────────────────────── */
+/* ── Fetch analytics summary + confusing topics from Node ───────────────────── */
 async function fetchAnalytics() {
   try {
-    const response = await fetch(`/api/analytics/${courseId}`);
-    if (response.ok) {
-      LIVE_ANALYTICS = await response.json();
+    const [summaryRes, topicsRes] = await Promise.all([
+      fetch(`${NODE_BASE}/api/analytics/summary/${courseId}`),
+      fetch(`${NODE_BASE}/api/analytics/confusing-topics/${courseId}`)
+    ]);
+
+    const summary = summaryRes.ok ? await summaryRes.json() : null;
+    const topics  = topicsRes.ok  ? await topicsRes.json()  : [];
+
+    if (summary) {
+      LIVE_ANALYTICS = {
+        total_queries:    summary.total_queries    || 0,
+        active_students:  summary.active_students  || 0,
+        avg_confidence:   summary.avg_confidence   || 0,
+        engagement_trend: summary.engagement_trend || [],
+        confusing_topics: Array.isArray(topics) ? topics : [],
+      };
       updateOverviewBar();
       updateHeatmap();
       updateEngagementChart();
-      console.log('Live analytics loaded:', LIVE_ANALYTICS);
     } else {
-      console.warn('Analytics API returned', response.status);
+      console.warn('Analytics summary unavailable');
     }
   } catch (err) {
     console.error('Failed to fetch analytics:', err);
   }
 }
 
-/* ── Fetch queries from API ──────────────────────────────────────── */
+/* ── Fetch queries from Node ─────────────────────────────────────────────────── */
 async function fetchQueries() {
   try {
-    const response = await fetch(`/api/analytics/${courseId}/queries`);
+    const response = await fetch(`${NODE_BASE}/api/queries/${courseId}`);
     if (response.ok) {
       const data = await response.json();
-      LIVE_QUERIES = data.queries || [];
+      // Map Node field names to what renderQueries() expects
+      LIVE_QUERIES = (Array.isArray(data) ? data : []).map(q => ({
+        time:     q.created_at ? new Date(q.created_at).toLocaleTimeString() : '',
+        student:  q.student_id || 'unknown',
+        text:     q.question   || '',
+        topic:    Array.isArray(q.topics) && q.topics.length ? q.topics[0] : 'General',
+        response: q.answer     || '',
+        sources:  Array.isArray(q.sources_used) ? q.sources_used.join(', ') : '',
+        failed:   (q.confidence_score || 0) < 0.5,
+      }));
       renderQueries(null);
-      console.log('Live queries loaded:', LIVE_QUERIES.length);
+    } else {
+      console.warn('Queries API returned', response.status);
     }
   } catch (err) {
     console.error('Failed to fetch queries:', err);
@@ -462,36 +487,44 @@ function updateOverviewBar() {
 /* ── Update heatmap with live data ──────────────────────────────────────── */
 function updateHeatmap() {
   if (!LIVE_ANALYTICS || !LIVE_ANALYTICS.confusing_topics) return;
-  
+
+  const topics = LIVE_ANALYTICS.confusing_topics;
+
   const heatmapTable = document.getElementById('heatmapTable');
-  if (!heatmapTable) return;
-  
-  const tbody = heatmapTable.querySelector('tbody');
-  if (!tbody) return;
-  
-  tbody.innerHTML = LIVE_ANALYTICS.confusing_topics.map(topic => `
-    <tr class="heatmap-row" data-topic="${topic.topic}">
-      <td class="topic-name-cell">${topic.topic}</td>
-      <td class="q-count-cell">${topic.count}</td>
-      <td><span class="diff-badge diff-${topic.difficulty.toLowerCase()}">${topic.difficulty}</span></td>
-    </tr>
-  `).join('');
-  
-  // Re-attach click handlers
-  attachHeatmapHandlers();
+  if (heatmapTable) {
+    const tbody = heatmapTable.querySelector('tbody');
+    if (tbody) {
+      tbody.innerHTML = topics.map(topic => `
+        <tr class="heatmap-row" data-topic="${topic.topic}">
+          <td class="topic-name-cell">${topic.topic}</td>
+          <td class="q-count-cell">${topic.count}</td>
+          <td><span class="diff-badge diff-${topic.difficulty.toLowerCase()}">${topic.difficulty}</span></td>
+        </tr>
+      `).join('');
+      attachHeatmapHandlers();
+    }
+  }
+
+  // Update the topic frequency bar chart
+  if (topicChartRef && topics.length) {
+    topicChartRef.data.labels = topics.map(t => t.topic);
+    topicChartRef.data.datasets[0].data = topics.map(t => t.count);
+    topicChartRef.data.datasets[0].backgroundColor = topics.map((_, i) =>
+      `rgba(0,188,212,${Math.max(0.15, 0.85 - i * 0.12)})`
+    );
+    topicChartRef.update();
+  }
 }
 
 /* ── Update engagement chart with live data ───────────────────── */
 function updateEngagementChart() {
   if (!LIVE_ANALYTICS || !LIVE_ANALYTICS.engagement_trend) return;
-  
-  const chart = Chart.getChart(document.getElementById('engagementChart'));
-  if (!chart) return;
-  
+  if (!trendChartRef) return;
+
   const trend = LIVE_ANALYTICS.engagement_trend;
-  chart.data.labels = trend.map(d => d.date.slice(5)); // MM-DD
-  chart.data.datasets[0].data = trend.map(d => d.count);
-  chart.update();
+  trendChartRef.data.labels = trend.map(d => d.date.slice(5)); // MM-DD
+  trendChartRef.data.datasets[0].data = trend.map(d => d.count);
+  trendChartRef.update();
 }
 
 /* ── Re-attach heatmap click handlers ─────────────────────────── */
@@ -514,6 +547,10 @@ function attachHeatmapHandlers() {
   });
 }
 
+/* ── Chart instance refs (populated at init, used by update fns) ── */
+let topicChartRef = null;
+let trendChartRef = null;
+
 /* ── Shared chart defaults (tokens match instructor.css :root) ── */
 Chart.defaults.font.family = "'JetBrains Mono', 'Courier New', monospace";
 Chart.defaults.font.size   = 11;
@@ -527,7 +564,7 @@ const ACCENT_FILL = 'rgba(0,188,212,0.08)';
 const TOOLTIP_BG  = '#111';              /* --surface     */
 
 /* ── Chart 1: Topic frequency (horizontal bar) ────────────────── */
-new Chart(document.getElementById('topicChart'), {
+topicChartRef = new Chart(document.getElementById('topicChart'), {
   type: 'bar',
   data: {
     labels: ['Loading...'],
@@ -559,7 +596,7 @@ new Chart(document.getElementById('topicChart'), {
 });
 
 /* ── Chart 2: Weekly engagement trend (line) ──────────────────── */
-new Chart(document.getElementById('trendChart'), {
+trendChartRef = new Chart(document.getElementById('trendChart'), {
   type: 'line',
   data: {
     labels: ['wk1','wk2','wk3','wk4','wk5','wk6','wk7','wk8'],
@@ -742,7 +779,7 @@ function clearFilter() {
       link.addEventListener('click', async (e) => {
         e.preventDefault();
         try {
-          const res = await fetch('/auth/logout', { method: 'POST' });
+          const res = await fetch(`${FLASK_BASE}/auth/logout`, { method: 'POST' });
           const data = await res.json();
           if (data.success) {
             window.location.href = data.redirect || '/login';

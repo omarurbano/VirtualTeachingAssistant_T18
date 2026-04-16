@@ -516,7 +516,7 @@ class SimpleEmbeddingManager:
         if not documents:
             return []
         
-        texts = [doc.page_content for doc in documents]
+        texts = [doc.page_content if hasattr(doc, 'page_content') else str(doc) for doc in documents]
         
         if self.model:
             embeddings = self.model.encode(texts, show_progress_bar=False)
@@ -4132,7 +4132,7 @@ if __name__ == '__main__':
     # Run Flask (disable reloader to prevent double initialization issues)
     app.run(
         host='0.0.0.0',
-        port=5000,
+        port=5001,
         debug=True,
         use_reloader=False
     )

@@ -33,3 +33,8 @@ nul
 
 # Node.js
 node_modules/
+
+# Claude
+.claude/
+claude*
+CLAUDE.md

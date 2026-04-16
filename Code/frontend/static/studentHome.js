@@ -1,10 +1,13 @@
 //Student Page for VTA
 //Loaded as soon as the page is rendered, it will get the user info and render the courses in the off canvas menu
 
+const FLASK_BASE = 'http://localhost:5001';
+const NODE_BASE  = 'http://localhost:3000';
+
 // Check for authenticated session first
 async function checkSession() {
     try {
-        const response = await fetch('/auth/me');
+        const response = await fetch(`${FLASK_BASE}/auth/me`);
         if (!response.ok) {
             // Not logged in, redirect to login
             window.location.href = '/login';
@@ -58,7 +61,7 @@ async function renderCourses(){
     
     try {
         // Use Flask endpoint
-        const response = await fetch(`/studentcourses/${userID}`);
+        const response = await fetch(`${NODE_BASE}/studentcourses/${userID}`);
         if(response.ok)
         {
             const data = await response.json();
@@ -99,7 +102,7 @@ function getUserInfo(){
         document.getElementById("userWelcome").textContent = `Welcome, ${userName}!`;
     } else if (userId) {
         // Fallback: fetch from API if not in session
-        fetch(`/users/${userId}`)
+        fetch(`${NODE_BASE}/users/${userId}`)
             .then(response => response.json())
             .then(user => {
                 document.getElementById("userWelcome").textContent = `Welcome, ${user.full_name || user.first_name || 'Student'}!`;
@@ -116,7 +119,7 @@ function getUserInfo(){
 //Checks to see if course code entered is a valid course code from a class
 async function validCourseNumber(coursecode) {
     try {
-        const response = await fetch(`/course/code/${coursecode}`);
+        const response = await fetch(`${NODE_BASE}/course/code/${coursecode}`);
         if (response.ok) {
             const course = await response.json();
             return course;
@@ -160,7 +163,7 @@ async function addCourse(){
         const courseId = validCourse.id || validCourse.course_id;
 
         try {
-            const response = await fetch(`/addCourse/${userId}/${courseId}`, {
+            const response = await fetch(`${NODE_BASE}/addCourse/${userId}/${courseId}`, {
                 method: 'POST'
             });
 
@@ -184,7 +187,7 @@ async function addCourse(){
 }
 
 function logout(){
-    fetch('/auth/logout', { method: 'POST' })
+    fetch(`${FLASK_BASE}/auth/logout`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
             sessionStorage.clear();

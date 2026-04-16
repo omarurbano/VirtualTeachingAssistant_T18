@@ -707,7 +707,7 @@ def get_supported_extensions() -> list:
     Returns:
         List of supported file extensions (with dots)
     """
-    return list(SPPORTED_FILE_TYPES.keys())
+    return list(SUPPORTED_FILE_TYPES.keys())
 
 
 def get_file_type_description(extension: str) -> str:

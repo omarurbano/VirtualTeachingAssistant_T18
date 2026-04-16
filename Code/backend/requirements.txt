@@ -7,7 +7,7 @@ flask-cors>=4.0.0
 werkzeug>=2.3.0
 
 # Data Processing
-numpy>=1.24.0
+numpy>=1.26,<2.2
 
 # LangChain & Document Loaders (Must Have)
 langchain-core>=0.1.0
@@ -99,7 +99,6 @@ nest-asyncio==1.6.0
 networkx==3.6.1
 nltk==3.9.2
 numba==0.63.1
-numpy==2.2.0
 olefile==0.47
 onnx==1.20.1
 onnxruntime==1.24.1
@@ -162,10 +161,10 @@ typer-slim==0.23.1
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.3
-unstructured==0.20.2
-unstructured-client==0.42.10
-unstructured.pytesseract==0.3.15
-unstructured_inference==1.2.0
+unstructured>=0.18.0,<0.19.0
+unstructured-client>=0.40.0
+unstructured-inference>=1.2.0
+pytesseract
 urllib3==2.6.3
 wcwidth==0.6.0
 webencodings==0.5.1

@@ -34,10 +34,15 @@ try:
     tesseract_path = r"C:\Users\nsudi\OneDrive\Documents\Tesseract\tesseract.exe"
     if os.path.exists(tesseract_path):
         pytesseract.pytesseract.tesseract_cmd = tesseract_path
+    # Verify the tesseract binary is actually reachable before marking available
+    pytesseract.get_tesseract_version()
     TESSERACT_AVAILABLE = True
 except ImportError:
     TESSERACT_AVAILABLE = False
     logger.warning("pytesseract not available. Install: pip install pytesseract")
+except Exception:
+    TESSERACT_AVAILABLE = False
+    logger.warning("Tesseract binary not found. OCR will be skipped. Install tesseract-ocr and ensure it is on PATH.")
 
 
 class ImageAnalyzer:
