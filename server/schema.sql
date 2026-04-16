@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS google_drive_links (
     connected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 5. ENROLLMENTS TABLE - Track student course enrollments
+CREATE TABLE IF NOT EXISTS enrollments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    student_id INTEGER NOT NULL,
+    course_id INTEGER NOT NULL,
+    enrolled_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(student_id, course_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course ON enrollments(course_id);
+
 -- ============================================
 -- ENABLE POSTGIS/pgvector IF NEEDED
 -- ============================================

@@ -52,6 +52,48 @@ app.get("/course", async (req, res) => {
     res.json(data);
 });
 
+// Create new course (for instructor dashboard)
+app.post("/course", async (req, res) => {
+    const { name, code, description, teacher_id } = req.body;
+    const { data, error } = await supabase
+        .from("courses")
+        .insert([{ 
+            name, 
+            code, 
+            description: description || '', 
+            teacher_id: teacher_id || 1,
+            is_active: true 
+        }])
+        .select()
+        .single();
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.status(201).json(data);
+});
+
+// Update course
+app.put("/course/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name, code, description, is_active } = req.body;
+    
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (code !== undefined) updates.code = code;
+    if (description !== undefined) updates.description = description;
+    if (is_active !== undefined) updates.is_active = is_active;
+    updates.updated_at = new Date().toISOString();
+    
+    const { data, error } = await supabase
+        .from("courses")
+        .update(updates)
+        .eq("id", id)
+        .select()
+        .single();
+    
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
 app.get("/course/:id", async (req, res) => {
     const { id } = req.params;
     const { data, error } = await supabase.from("courses").select("*").eq("id", id).single();
@@ -69,15 +111,35 @@ app.get("/course/code/:courseCode", async (req, res) => {
 // ENROLLMENTS
 app.post("/addCourse/:userId/:courseId", async (req, res) => {
     const { userId, courseId } = req.params;
-    const { data, error } = await supabase.from("enrollments").insert([{ student_id: userId, course_id: courseId }]).select().single();
-    if (error) return res.status(500).send("Server error");
+    const { data, error } = await supabase.from("enrollments").insert([{ 
+        student_id: parseInt(userId), 
+        course_id: parseInt(courseId),
+        status: 'active'
+    }]).select().single();
+    if (error) {
+        console.error('Enrollment error:', error);
+        return res.status(500).json({ error: error.message });
+    }
     res.json(data);
 });
 
 app.get("/studentcourses/:userId", async (req, res) => {
     const { userId } = req.params;
-    const { data, error } = await supabase.from("enrollments").select("courses(name)").eq("student_id", userId);
-    if (error) return res.status(404).send("Courses not found");
+    const { data, error } = await supabase
+        .from("enrollments")
+        .select(`
+            course_id,
+            status,
+            enrolled_at,
+            courses (name, code)
+        `)
+        .eq("student_id", parseInt(userId))
+        .eq("status", "active");
+    
+    if (error) {
+        console.error('Get student courses error:', error);
+        return res.status(404).json({ error: error.message });
+    }
     res.json(data);
 });
 

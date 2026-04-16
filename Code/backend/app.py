@@ -2337,13 +2337,19 @@ def get_courses():
         if not user or user.role != 'teacher':
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Return courses for this teacher (from in-memory storage or database)
-        # For now, return mock data - in production, query database
-        courses = []
-        if hasattr(app_state, 'courses'):
-            courses = app_state.courses
-        
-        return jsonify({'courses': courses})
+        # Fetch courses from Supabase via Express API
+        try:
+            response = requests.get(f"{NODE_API_URL}/course", timeout=10)
+            if response.status_code == 200:
+                courses = response.json()
+                return jsonify({'courses': courses})
+            else:
+                logger.error(f"Failed to fetch courses: {response.text}")
+                return jsonify({'courses': []})
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify({'courses': []})
+            
     except Exception as e:
         logger.error(f"Get courses error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2369,30 +2375,31 @@ def create_course():
         if not name or not code:
             return jsonify({'error': 'Name and code are required'}), 400
         
-        # Generate unique course ID
-        import uuid
-        course_id = str(uuid.uuid4())[:8]
-        
-        # Create course object
-        course = {
-            'id': course_id,
-            'name': name,
-            'code': code,
-            'teacher_id': user.user_id,
-            'created_at': datetime.now().isoformat(),
-            'students_count': 0,
-            'materials_count': 0,
-            'status': 'active'
-        }
-        
-        # Store in memory (in production, save to database)
-        if not hasattr(app_state, 'courses'):
-            app_state.courses = []
-        app_state.courses.append(course)
-        
-        logger.info(f"Course created: {name} ({code}) by teacher {user.email}")
-        
-        return jsonify({'success': True, 'course': course}), 201
+        # Create course in Supabase via Express API
+        try:
+            response = requests.post(
+                f"{NODE_API_URL}/course",
+                json={
+                    'name': name,
+                    'code': code,
+                    'description': '',
+                    'teacher_id': int(user.user_id) if user.user_id.isdigit() else 1
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 201:
+                course = response.json()
+                logger.info(f"Course created: {name} ({code}) by teacher {user.email}")
+                return jsonify({'success': True, 'course': course}), 201
+            else:
+                logger.error(f"Failed to create course in database: {response.text}")
+                return jsonify({'error': 'Failed to create course in database'}), 500
+                
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify({'error': 'Database connection error'}), 500
+            
     except Exception as e:
         logger.error(f"Create course error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2411,14 +2418,17 @@ def get_course(course_id):
         if not user:
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Find course
-        courses = getattr(app_state, 'courses', [])
-        course = next((c for c in courses if c['id'] == course_id), None)
-        
-        if not course:
-            return jsonify({'error': 'Course not found'}), 404
-        
-        return jsonify({'course': course})
+        # Fetch course from Supabase via Express API
+        try:
+            response = requests.get(f"{NODE_API_URL}/course/{course_id}", timeout=10)
+            if response.status_code == 200:
+                return jsonify({'course': response.json()})
+            else:
+                return jsonify({'error': 'Course not found'}), 404
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify({'error': 'Database connection error'}), 500
+            
     except Exception as e:
         logger.error(f"Get course error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2439,8 +2449,24 @@ def update_course(course_id):
         
         data = request.get_json()
         
-        # Find and update course
-        courses = getattr(app_state, 'courses', [])
+        # Update course in Supabase via Express API
+        try:
+            response = requests.put(
+                f"{NODE_API_URL}/course/{course_id}",
+                json=data,
+                timeout=10
+            )
+            if response.status_code == 200:
+                return jsonify({'success': True, 'course': response.json()})
+            else:
+                return jsonify({'error': 'Course not found'}), 404
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify({'error': 'Database connection error'}), 500
+        
+    except Exception as e:
+        logger.error(f"Update course error: {e}")
+        return jsonify({'error': str(e)}), 500
         for course in courses:
             if course['id'] == course_id:
                 if 'name' in data:
@@ -2790,18 +2816,24 @@ def get_course_by_code(course_code):
     """Get course by course code."""
     try:
         course_code = course_code.upper()
-        courses = getattr(app_state, 'courses', [])
-        course = next((c for c in courses if c['code'].upper() == course_code), None)
         
-        if not course:
-            return jsonify({'error': 'Course not found'}), 404
-        
-        return jsonify({
-            'id': course['id'],
-            'course_id': course['id'],
-            'name': course['name'],
-            'code': course['code']
-        })
+        # Fetch from Supabase via Express API
+        try:
+            response = requests.get(f"{NODE_API_URL}/course/code/{course_code}", timeout=10)
+            if response.status_code == 200:
+                course = response.json()
+                return jsonify({
+                    'id': course.get('id'),
+                    'course_id': course.get('id'),
+                    'name': course.get('name'),
+                    'code': course.get('code')
+                })
+            else:
+                return jsonify({'error': 'Course not found'}), 404
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify({'error': 'Database connection error'}), 500
+            
     except Exception as e:
         logger.error(f"Get course by code error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2811,8 +2843,16 @@ def get_course_by_code(course_code):
 def get_all_courses():
     """Get all courses."""
     try:
-        courses = getattr(app_state, 'courses', [])
-        return jsonify(courses)
+        # Fetch from Supabase via Express API
+        try:
+            response = requests.get(f"{NODE_API_URL}/course", timeout=10)
+            if response.status_code == 200:
+                return jsonify(response.json())
+            else:
+                return jsonify([])
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify([])
     except Exception as e:
         logger.error(f"Get courses error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2822,12 +2862,16 @@ def get_all_courses():
 def get_course_by_id(course_id):
     """Get course by ID."""
     try:
-        course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == course_id), None)
-        
-        if not course:
-            return jsonify({'error': 'Course not found'}), 404
-        
-        return jsonify(course)
+        # Fetch from Supabase via Express API
+        try:
+            response = requests.get(f"{NODE_API_URL}/course/{course_id}", timeout=10)
+            if response.status_code == 200:
+                return jsonify(response.json())
+            else:
+                return jsonify({'error': 'Course not found'}), 404
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify({'error': 'Database connection error'}), 500
     except Exception as e:
         logger.error(f"Get course error: {e}")
         return jsonify({'error': str(e)}), 500
