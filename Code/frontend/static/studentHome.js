@@ -62,31 +62,36 @@ async function renderCourses(){
         if(response.ok)
         {
             const data = await response.json();
+            // Handle different response formats from Express
             const courses = data.courses || data;
             const courseList = document.getElementById("studentCourses");
             courseList.innerHTML = "";
             
             if (!courses || courses.length === 0) {
-                courseList.innerHTML = '<li class="text-info-subtle">No courses enrolled</li>';
+                courseList.innerHTML = '<li class="text-info p-3">No courses enrolled</li>';
                 return;
             }
             
             courses.forEach(course => {
-                btn = document.createElement("button");
-                btn.textContent = course.name || course.course_name || course.code;
+                // Handle nested structure from Express: {courses: {name: "..."}}
+                const courseName = course.courses?.name || course.name || course.course_name || course.code || "Unknown Course";
+                const courseId = course.course_id || course.id || course.courses?.id;
+                
+                const btn = document.createElement("button");
+                btn.textContent = courseName;
                 btn.onclick = () => {
-                    // Pass course context via URL parameter
-                    const courseId = course.id || course.course_id;
-                    window.location.href = `/?course=${courseId}`; //Loads to VTA chat with course context
+                    window.location.href = `/?course=${courseId}`;
                 };
-                btn.classList.add("list-group-item","list-group-item-secondary","list-group-item-action", "text-info");
+                btn.classList.add("course-btn");
                 courseList.appendChild(btn);
             });
         } else {
             console.error("Failed to fetch courses:", response.status);
+            document.getElementById("studentCourses").innerHTML = '<li class="text-danger p-3">Error loading courses</li>';
         }
     } catch (error) {
         console.error("Error fetching courses:", error);
+        document.getElementById("studentCourses").innerHTML = '<li class="text-danger p-3">Error loading courses</li>';
     }
 }
 //Fill in the name in the navbar based on the user id stored in session storage

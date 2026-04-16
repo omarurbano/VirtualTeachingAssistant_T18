@@ -2739,16 +2739,20 @@ def get_student_courses(user_id):
         if not user:
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Get student's enrolled courses
-        courses = []
-        if hasattr(app_state, 'enrollments'):
-            course_ids = app_state.enrollments.get(str(user_id), [])
-            for cid in course_ids:
-                course = next((c for c in getattr(app_state, 'courses', []) if c['id'] == cid), None)
-                if course:
-                    courses.append(course)
-        
-        return jsonify(courses)
+        # Get student's enrolled courses from Supabase via Express API
+        try:
+            response = requests.get(f"{NODE_API_URL}/studentcourses/{user.user_id}", timeout=10)
+            if response.status_code == 200:
+                enrollments = response.json()
+                # Format for frontend
+                courses = [{'courses': {'name': e.get('courses', {}).get('name', 'Unknown')}} for e in enrollments]
+                return jsonify(courses)
+            else:
+                return jsonify([])
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify([])
+            
     except Exception as e:
         logger.error(f"Get student courses error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2772,39 +2776,39 @@ def add_course_enrollment(user_id, course_id):
         actual_user_id = user.user_id
         actual_user_role = user.role
         
-        # Verify course exists (by ID or by code)
-        course = None
-        course_code = str(course_id)
+        # First verify course exists by looking it up
+        try:
+            response = requests.get(f"{NODE_API_URL}/course/{course_id}", timeout=10)
+            if response.status_code != 200:
+                # Try by code
+                response = requests.get(f"{NODE_API_URL}/course/code/{course_id}", timeout=10)
+                if response.status_code != 200:
+                    return jsonify({'error': 'Course not found. Check the code and try again.'}), 404
+            
+            course = response.json()
+            real_course_id = course.get('id')
+            
+        except requests.RequestException as e:
+            logger.error(f"Error verifying course: {e}")
+            return jsonify({'error': 'Database connection error'}), 500
         
-        # Try as course ID first
-        all_courses = getattr(app_state, 'courses', [])
-        course = next((c for c in all_courses if c['id'] == course_id), None)
+        # Add enrollment via Express API
+        try:
+            enroll_response = requests.post(
+                f"{NODE_API_URL}/addCourse/{actual_user_id}/{real_course_id}",
+                timeout=10
+            )
+            
+            if enroll_response.status_code == 200 or enroll_response.status_code == 201:
+                logger.info(f"Student {user.email} enrolled in {course.get('name')}")
+                return jsonify({'success': True, 'course': course})
+            else:
+                return jsonify({'error': 'Failed to enroll in course'}), 500
+                
+        except requests.RequestException as e:
+            logger.error(f"Error adding enrollment: {e}")
+            return jsonify({'error': 'Database connection error'}), 500
         
-        # If not found, try as numeric code
-        if not course:
-            course = next((c for c in all_courses if str(c.get('code', '')) == course_code), None)
-        
-        if not course:
-            return jsonify({'error': 'Course not found. Check the code and try again.'}), 404
-        
-        real_course_id = course['id']
-        
-        # Add enrollment
-        if not hasattr(app_state, 'enrollments'):
-            app_state.enrollments = {}
-        
-        enrollments = app_state.enrollments
-        user_key = str(actual_user_id)
-        
-        if user_key not in enrollments:
-            enrollments[user_key] = []
-        
-        if real_course_id not in enrollments[user_key]:
-            enrollments[user_key].append(real_course_id)
-            course['students_count'] = course.get('students_count', 0) + 1
-            logger.info(f"Student {user.email} enrolled in {course['name']}")
-        
-        return jsonify({'success': True, 'course': course})
     except Exception as e:
         logger.error(f"Add course error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2879,7 +2883,21 @@ def get_course_by_id(course_id):
 
 @app.route('/')
 def index():
-    """Render the login page."""
+    """Render the VTA chat or redirect to login."""
+    # Check if user has valid session
+    token = request.cookies.get('session_token')
+    if token:
+        user = auth_session.get_session(token)
+        if user:
+            # User is authenticated, serve VTA (index.html)
+            try:
+                template_path = os.path.join(BASE_DIR, '..', 'frontend', 'templates', 'index.html')
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except Exception as e:
+                logger.error(f"Error loading index.html: {e}")
+    
+    # Not authenticated, redirect to login
     return redirect('/login')
 
 

@@ -111,14 +111,17 @@ app.get("/course/code/:courseCode", async (req, res) => {
 // ENROLLMENTS
 app.post("/addCourse/:userId/:courseId", async (req, res) => {
     const { userId, courseId } = req.params;
+    console.log('Adding enrollment:', userId, courseId);
+    
     const { data, error } = await supabase.from("enrollments").insert([{ 
         student_id: parseInt(userId), 
         course_id: parseInt(courseId),
         status: 'active'
     }]).select().single();
+    
     if (error) {
-        console.error('Enrollment error:', error);
-        return res.status(500).json({ error: error.message });
+        console.error('Enrollment error details:', JSON.stringify(error));
+        return res.status(500).json({ error: error.message, details: error });
     }
     res.json(data);
 });
