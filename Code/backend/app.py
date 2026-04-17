@@ -2375,6 +2375,28 @@ def create_course():
         if not name or not code:
             return jsonify({'error': 'Name and code are required'}), 400
         
+        # Validate course code format (allow letters, numbers, underscores, dashes)
+        import re
+        if not re.match(r'^[A-Z0-9_-]+$', code):
+            return jsonify({'error': 'Course code can only contain letters, numbers, underscores, and dashes'}), 400
+        
+        # Check for duplicates BEFORE creating
+        try:
+            # Check if course name already exists for this teacher
+            check_name_response = requests.get(
+                f"{NODE_API_URL}/course",
+                timeout=10
+            )
+            if check_name_response.status_code == 200:
+                existing_courses = check_name_response.json()
+                for c in existing_courses:
+                    if c.get('name', '').lower() == name.lower():
+                        return jsonify({'error': f'A course named "{name}" already exists. Please use a different name.'}), 400
+                    if c.get('code', '').upper() == code.upper():
+                        return jsonify({'error': f'A course with code "{code}" already exists. Please use a different code.'}), 400
+        except requests.RequestException:
+            pass  # If check fails, proceed with creation
+        
         # Create course in Supabase via Express API
         try:
             response = requests.post(
@@ -2392,6 +2414,10 @@ def create_course():
                 course = response.json()
                 logger.info(f"Course created: {name} ({code}) by teacher {user.email}")
                 return jsonify({'success': True, 'course': course}), 201
+            elif response.status_code == 400:
+                # Supabase returned error (likely unique constraint violation)
+                error_data = response.json()
+                return jsonify({'error': error_data.get('error', 'Course code already exists')}), 400
             else:
                 logger.error(f"Failed to create course in database: {response.text}")
                 return jsonify({'error': 'Failed to create course in database'}), 500
@@ -2498,15 +2524,24 @@ def regenerate_course_code(course_id):
         import secrets
         new_code = f"{secrets.randbelow(900000) + 100000}"  # Random 6-digit number
         
-        # Update course
-        courses = getattr(app_state, 'courses', [])
-        for course in courses:
-            if course['id'] == course_id:
-                course['code'] = new_code
-                course['updated_at'] = datetime.now().isoformat()
+        # Update course in Supabase via Express API
+        try:
+            response = requests.put(
+                f"{NODE_API_URL}/course/{course_id}",
+                json={"code": new_code},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Course {course_id} code regenerated to {new_code}")
                 return jsonify({'success': True, 'code': new_code})
+            else:
+                return jsonify({'error': 'Failed to update course in database'}), 500
+                
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify({'error': 'Database connection error'}), 500
         
-        return jsonify({'error': 'Course not found'}), 404
     except Exception as e:
         logger.error(f"Regenerate code error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2552,15 +2587,28 @@ def get_course_materials(course_id):
         if not user:
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Get materials for this course
-        materials = []
-        if hasattr(app_state, 'course_materials'):
-            materials = app_state.course_materials.get(course_id, [])
-        
-        return jsonify({'materials': materials})
+        # Get materials from Supabase via Express API
+        try:
+            response = requests.get(f"{NODE_API_URL}/api/materials/{course_id}", timeout=10)
+            if response.status_code == 200:
+                materials = response.json()
+                return jsonify(materials)  # Return as array directly
+            else:
+                return jsonify([])
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify([])
+            
     except Exception as e:
         logger.error(f"Get materials error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# Also add the /api/materials/<course_id> endpoint for frontend compatibility
+@app.route('/api/materials/<course_id>', methods=['GET'])
+def get_materials_alias(course_id):
+    """Get materials for a course (alias endpoint)."""
+    return get_course_materials(course_id)
 
 
 @app.route('/api/courses/<course_id>/students', methods=['GET'])
@@ -2575,12 +2623,27 @@ def get_course_students(course_id):
         if not user or user.role != 'teacher':
             return jsonify({'error': 'Unauthorized'}), 403
         
-        # Return mock student data - in production, query enrollment table
-        students = []
-        if hasattr(app_state, 'course_students'):
-            students = app_state.course_students.get(course_id, [])
-        
-        return jsonify({'students': students})
+        # Fetch from Supabase via Express API
+        try:
+            response = requests.get(f"{NODE_API_URL}/api/courses/{course_id}/students", timeout=10)
+            if response.status_code == 200:
+                enrollments = response.json()
+                # Transform to student format
+                students = []
+                for e in enrollments:
+                    students.append({
+                        'id': e.get('student_id'),
+                        'full_name': e.get('users', {}).get('full_name', 'Unknown'),
+                        'email': e.get('users', {}).get('email', ''),
+                        'enrolled_at': e.get('enrolled_at')
+                    })
+                return jsonify({'students': students})
+            else:
+                return jsonify({'students': []})
+        except requests.RequestException as e:
+            logger.error(f"Error calling Express API: {e}")
+            return jsonify({'students': []})
+            
     except Exception as e:
         logger.error(f"Get students error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -3868,10 +3931,13 @@ def drive_auth_start():
         if not course_id:
             return jsonify({'error': 'course_id required'}), 400
         
-        import secrets
-        state = secrets.token_urlsafe(32)
-        session['drive_oauth_state'] = state
+        # Store course_id in session
         session['drive_oauth_course'] = course_id
+        
+        # Build state with course_id embedded (for callback recovery)
+        import secrets
+        state = f"{course_id}:{secrets.token_urlsafe(32)}"
+        session['drive_oauth_state'] = state
         
         auth_url = build_drive_auth_url(state)
         if not auth_url:
@@ -3894,11 +3960,18 @@ def drive_auth_callback():
         code = request.args.get('code')
         state = request.args.get('state')
         
-        expected_state = session.get('drive_oauth_state')
-        if state != expected_state:
-            return jsonify({'error': 'Invalid state'}), 400
+        # Get course_id from multiple sources
+        course_id = request.args.get('course_id') or session.get('drive_oauth_course')
         
-        course_id = session.pop('drive_oauth_course', None)
+        # If still no course_id, try to extract from state (embedded as "course_id:random")
+        if not course_id and state and ':' in state:
+            try:
+                course_id = state.split(':')[0]
+            except:
+                pass
+        
+        if not course_id:
+            return jsonify({'error': 'Missing course_id. Please try again from the course page.'}), 400
         
         tokens = exchange_drive_code(code)
         if 'error' in tokens:
@@ -3914,6 +3987,34 @@ def drive_auth_callback():
         session['drive_access_token'] = access_token
         session['drive_refresh_token'] = refresh_token
         
+        # ALSO save tokens to Supabase so they persist
+        if course_id:
+            try:
+                import requests as req
+                # First get existing folder_url if any
+                existing_response = req.get(f"{NODE_API_URL}/api/drive/{course_id}", timeout=5)
+                existing_folder_url = ''
+                if existing_response.ok and existing_response.json():
+                    existing_folder_url = existing_response.json().get('folder_url', '')
+                
+                # Use folder_url from session or from existing record
+                folder_url = session.get('drive_folder_url', '') or existing_folder_url
+                
+                response = req.post(
+                    f"{NODE_API_URL}/api/drive/connect",
+                    json={
+                        'course_id': course_id,
+                        'teacher_id': str(user.user_id) if 'user' in locals() else '1',
+                        'folder_url': folder_url,
+                        'access_token': access_token,
+                        'refresh_token': refresh_token
+                    },
+                    timeout=5
+                )
+                logger.info(f"Tokens saved to Supabase for course {course_id}")
+            except Exception as e:
+                logger.warning(f"Failed to save tokens to Supabase: {e}")
+        
         logger.info(f"Drive connected for course: {course_id}")
         
         return redirect(f'/instructor/course/{course_id}')
@@ -3925,9 +4026,9 @@ def drive_auth_callback():
 def extract_drive_folder_id(url: str) -> str:
     """Extract folder ID from Google Drive URL."""
     patterns = [
-        r'drive\.google\.com/folderview\?id=([^&]+)',
-        r'drive\.google\.com/[a-z/]+/folders/([^&]+)',
-        r'docs\.google\.com/[^/]+/folders/([^&]+)',
+        r'drive\.google\.com/folderview\?id=([^&?]+)',
+        r'drive\.google\.com/[a-z/]+/folders/([^&?]+)',
+        r'docs\.google\.com/[^/]+/folders/([^&?]+)',
     ]
     
     for pattern in patterns:
@@ -3973,7 +4074,7 @@ def connect_drive():
                 f"{NODE_API_URL}/api/drive/connect",
                 json={
                     'course_id': course_id,
-                    'teacher_id': str(user.id),
+                    'teacher_id': str(user.user_id),  # Use user_id from session
                     'folder_url': folder_url,
                     'refresh_token': folder_id
                 },
@@ -3981,7 +4082,7 @@ def connect_drive():
             )
             
             if response.ok:
-                logger.info(f"Drive connected: course={course_id}, folder={folder_id}")
+                logger.info(f"Drive connected: course={course_id}, teacher={user.user_id}, folder={folder_id}")
                 return jsonify({'success': True, 'folder_id': folder_id})
             else:
                 return jsonify({'error': 'Failed to save Drive connection'}), 500
@@ -4001,8 +4102,33 @@ def list_drive_files(course_id):
     """List files in connected Google Drive folder."""
     try:
         import requests
-        response = requests.get(f"{NODE_API_URL}/api/drive/{course_id}", timeout=5)
         
+        # First check if we have OAuth tokens in session
+        access_token = session.get('drive_access_token')
+        refresh_token = session.get('drive_refresh_token')
+        
+        # If no access token in session, get from database
+        if not access_token:
+            try:
+                response = requests.get(f"{NODE_API_URL}/api/drive/{course_id}", timeout=5)
+                if response.ok and response.json():
+                    drive_info = response.json()
+                    access_token = drive_info.get('access_token')
+                    refresh_token = drive_info.get('refresh_token')
+            except Exception as e:
+                logger.warning(f"Could not fetch tokens from Supabase: {e}")
+        
+        if not access_token:
+            # Need OAuth
+            return jsonify({
+                'needs_auth': True,
+                'auth_url': f'/drive/auth?course_id={course_id}',
+                'files': [],
+                'note': 'Click "Sync from Drive" to authorize access to your Google Drive'
+            }), 200
+        
+        # Get folder info
+        response = requests.get(f"{NODE_API_URL}/api/drive/{course_id}", timeout=5)
         if not response.ok or not response.json():
             return jsonify({'error': 'Drive not connected', 'files': []}), 400
         
@@ -4013,13 +4139,51 @@ def list_drive_files(course_id):
         if not folder_id:
             return jsonify({'files': [], 'note': 'No folder linked'}), 200
         
-        return jsonify({
-            'files': [],
-            'note': 'OAuth integration required for file listing',
-            'folder_id': folder_id,
-            'folder_url': folder_url
-        }), 200
+        # List files from Google Drive API
+        headers = {'Authorization': f'Bearer {access_token}'}
         
+        # Query for files in the folder
+        query = f"'{folder_id}' in parents and trashed = false"
+        params = {
+            'q': query,
+            'fields': 'files(id,name,mimeType,size,webViewLink,createdTime,modifiedTime)',
+            'pageSize': 100,
+            'orderBy': 'name'
+        }
+        
+        files_response = requests.get(
+            'https://www.googleapis.com/drive/v3/files',
+            headers=headers,
+            params=params,
+            timeout=30
+        )
+        
+        if files_response.ok:
+            files_data = files_response.json()
+            files = []
+            for f in files_data.get('files', []):
+                # Only include supported file types
+                if f.get('mimeType') in ['application/pdf', 'application/vnd.google-apps.document', 'application/vnd.google-apps.presentation']:
+                    files.append({
+                        'id': f.get('id'),
+                        'name': f.get('name'),
+                        'type': f.get('mimeType'),
+                        'size': f.get('size', '0'),
+                        'url': f.get('webViewLink')
+                    })
+            
+            return jsonify({'files': files, 'folder_id': folder_id}), 200
+        elif files_response.status_code == 401:
+            # Token expired, need to refresh or re-auth
+            return jsonify({
+                'needs_auth': True,
+                'auth_url': f'/drive/auth?course_id={course_id}',
+                'files': [],
+                'note': 'Session expired. Click "Sync from Drive" to reconnect.'
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to list files', 'files': []}), 500
+            
     except Exception as e:
         logger.error(f"Drive files error: {e}")
         return jsonify({'error': str(e), 'files': []}), 500
@@ -4030,24 +4194,67 @@ def sync_drive_files():
     """Sync selected files from Google Drive."""
     try:
         data = request.get_json()
-        file_urls = data.get('file_urls', [])
+        file_urls = data.get('file_urls', [])  # These are file IDs
+        file_names = data.get('file_names', [])
         course_id = data.get('course_id')
         
         if not file_urls or not course_id:
             return jsonify({'error': 'file_urls and course_id required'}), 400
         
-        results = []
+        # Get access token from session or database
+        access_token = session.get('drive_access_token')
         
-        # For each URL, we would download and vectorize
-        # Full implementation requires OAuth credentials
-        for url in file_urls:
-            results.append({
-                'url': url,
-                'status': 'pending',
-                'note': 'OAuth download pending'
-            })
+        # If no token in session, try to get from database
+        if not access_token:
+            try:
+                import requests as req
+                response = req.get(f"{NODE_API_URL}/api/drive/{course_id}", timeout=5)
+                if response.ok and response.json():
+                    drive_info = response.json()
+                    access_token = drive_info.get('access_token')
+            except Exception as e:
+                logger.warning(f"Could not fetch tokens from Supabase: {e}")
         
-        return jsonify({'results': results}), 200
+        if not access_token:
+            return jsonify({'error': 'Google Drive not connected. Please link and authorize first.'}), 401
+        
+        imported_count = 0
+        errors = []
+        
+        for i, file_id in enumerate(file_urls):
+            file_name = file_names[i] if i < len(file_names) else f'file_{i}'
+            
+            try:
+                # Call the embed endpoint for each file
+                embed_response = requests.post(
+                    'http://localhost:5000/drive/embed',
+                    json={
+                        'file_id': file_id,
+                        'file_name': file_name,
+                        'course_id': course_id
+                    },
+                    timeout=120
+                )
+                
+                if embed_response.ok:
+                    imported_count += 1
+                    logger.info(f"Imported: {file_name}")
+                else:
+                    error_data = embed_response.json()
+                    errors.append(f"{file_name}: {error_data.get('error', 'Unknown error')}")
+                    
+            except Exception as e:
+                logger.error(f"Error importing {file_name}: {e}")
+                errors.append(f"{file_name}: {str(e)}")
+        
+        if imported_count > 0:
+            return jsonify({
+                'success': True,
+                'imported_count': imported_count,
+                'errors': errors if errors else None
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to import any files', 'details': errors}), 500
         
     except Exception as e:
         logger.error(f"Drive sync error: {e}")
@@ -4067,8 +4274,19 @@ def embed_drive_file():
         if not file_id or not course_id:
             return jsonify({'error': 'file_id and course_id required'}), 400
         
-        # Get access token from session
+        # Get access token from session or database
         access_token = session.get('drive_access_token')
+        
+        # If no token in session, try to get from database
+        if not access_token:
+            try:
+                import requests as req
+                response = req.get(f"{NODE_API_URL}/api/drive/{course_id}", timeout=5)
+                if response.ok and response.json():
+                    drive_info = response.json()
+                    access_token = drive_info.get('access_token')
+            except Exception as e:
+                logger.warning(f"Could not fetch tokens from Supabase: {e}")
         
         if not access_token:
             return jsonify({'error': 'Google Drive not connected. Please link your Drive first.'}), 401
@@ -4139,6 +4357,19 @@ def embed_drive_file():
             
             # Process the uploaded file
             result = process_uploaded_file(file_path, file_id_new)
+            
+            # IMPORTANT: Clean up temp file and directory after processing to save storage
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info(f"Cleaned up temp file after processing: {file_path}")
+            # Also clean up the temp directory
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                import shutil
+                try:
+                    shutil.rmtree(temp_dir)
+                    logger.info(f"Cleaned up temp directory: {temp_dir}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean temp directory: {cleanup_error}")
             
             if result['success']:
                 # Add course_id to metadata for scoping

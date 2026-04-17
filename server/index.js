@@ -47,9 +47,31 @@ app.get("/users/:id", async (req, res) => {
 
 // COURSES
 app.get("/course", async (req, res) => {
-    const { data, error } = await supabase.from("courses").select("*");
+    const { data: courses, error } = await supabase.from("courses").select("*");
     if (error) return res.status(500).send("Server error");
-    res.json(data);
+    
+    // Get enrollment counts and material counts for each course
+    const { data: enrollments } = await supabase.from("enrollments").select("course_id, student_id");
+    const { data: materials } = await supabase.from("course_materials").select("course_id");
+    
+    const enrollmentCounts = {};
+    const materialCounts = {};
+    
+    enrollments.forEach(e => {
+        enrollmentCounts[e.course_id] = (enrollmentCounts[e.course_id] || 0) + 1;
+    });
+    
+    materials.forEach(m => {
+        materialCounts[m.course_id] = (materialCounts[m.course_id] || 0) + 1;
+    });
+    
+    const coursesWithCounts = courses.map(c => ({
+        ...c,
+        students_count: enrollmentCounts[c.id] || 0,
+        materials_count: materialCounts[c.id] || 0
+    }));
+    
+    res.json(coursesWithCounts);
 });
 
 // Create new course (for instructor dashboard)
@@ -234,6 +256,50 @@ app.post("/api/materials", async (req, res) => {
     res.json(data);
 });
 
+// Get students enrolled in a course
+app.get("/api/courses/:courseId/students", async (req, res) => {
+    console.log('Students API endpoint hit for courseId:', req.params.courseId);
+    const courseId = req.params.courseId;
+    
+    // Get enrollments with user details
+    const { data: enrollments, error } = await supabase
+        .from("enrollments")
+        .select("student_id, enrolled_at, status")
+        .eq("course_id", courseId)
+        .eq("status", "active");
+    
+    if (error) {
+        console.error('Error fetching students:', error);
+        return res.status(500).json({ error: error.message });
+    }
+    
+    // Get user details for each student
+    const studentIds = enrollments.map(e => e.student_id);
+    if (studentIds.length === 0) {
+        return res.json([]);
+    }
+    
+    const { data: users } = await supabase
+        .from("users")
+        .select("id, full_name, email")
+        .in("id", studentIds);
+    
+    // Combine enrollment data with user data
+    const students = enrollments.map(e => {
+        const user = users ? users.find(u => u.id === e.student_id) : null;
+        return {
+            id: e.student_id,
+            student_id: e.student_id,
+            full_name: user ? user.full_name : 'Unknown',
+            email: user ? user.email : '',
+            enrolled_at: e.enrolled_at,
+            status: e.status
+        };
+    });
+    
+    res.json(students);
+});
+
 // Google Drive
 app.post("/api/drive/connect", async (req, res) => {
     const { course_id, teacher_id, folder_url, access_token, refresh_token } = req.body;
@@ -250,9 +316,10 @@ app.post("/api/drive/connect", async (req, res) => {
 
 app.get("/api/drive/:courseId", async (req, res) => {
     const { courseId } = req.params;
-    const { data, error } = await supabase.from("google_drive_links").select("*").eq("course_id", courseId).single();
+    const { data, error } = await supabase.from("google_drive_links").select("*").eq("course_id", courseId);
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data || null);
+    // Return first result or null if no results
+    res.json(data && data.length > 0 ? data[0] : null);
 });
 
 // ============================================

@@ -17,13 +17,15 @@
       <span class="prompt">$</span> cd ../dashboard
     </a>
     <span class="top-bar-sep">/</span>
-    <span class="top-bar-course-name">Databases</span>
-    <span class="course-badge">CPTS_451</span>
+    <span class="top-bar-course-name" id="courseNameDisplay">Loading...</span>
+    <span class="course-badge" id="courseCodeDisplay">---</span>
   </div>
   <div class="top-bar-right">
-    <span class="welcome-text">Welcome, <span class="accent">Dr. Reynolds</span></span>
+    <span class="welcome-text">Welcome, <span class="accent" id="teacherNameDisplay">Teacher</span></span>
     <a href="#" class="btn-term btn-term-outline">$ logout</a>
   </div>
+  <!-- Debug info -->
+  <div id="debugInfo" style="display:none;"></div>
 </header>
 
 <!-- ░░ PAGE WRAPPER ░░ -->
@@ -42,7 +44,7 @@
   <section class="tab-panel active" id="tab-materials">
 
     <div class="section-header">
-      <span class="prompt">$</span> ls -lh ./materials/CPTS_451/
+      <span class="prompt">$</span> ls -lh ./materials/<span id="materialsCourseCode">---</span>/
       <span class="cursor-blink">█</span>
     </div>
 
@@ -57,74 +59,9 @@
             <th>status</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="materialsTableBody">
           <tr>
-            <td class="filename-cell">
-              <span class="file-icon">▸</span> week01_intro_to_databases.pdf
-            </td>
-            <td><span class="type-badge type-lecture">LECTURE</span></td>
-            <td class="date-cell">2025-01-15</td>
-            <td><span class="status-done">● embedding complete</span></td>
-          </tr>
-          <tr>
-            <td class="filename-cell">
-              <span class="file-icon">▸</span> week02_relational_model.pdf
-            </td>
-            <td><span class="type-badge type-lecture">LECTURE</span></td>
-            <td class="date-cell">2025-01-22</td>
-            <td><span class="status-done">● embedding complete</span></td>
-          </tr>
-          <tr>
-            <td class="filename-cell">
-              <span class="file-icon">▸</span> assignment_01_erd_design.pdf
-            </td>
-            <td><span class="type-badge type-assignment">ASSIGNMENT</span></td>
-            <td class="date-cell">2025-01-24</td>
-            <td><span class="status-done">● embedding complete</span></td>
-          </tr>
-          <tr>
-            <td class="filename-cell">
-              <span class="file-icon">▸</span> lab_02_sql_basics.pdf
-            </td>
-            <td><span class="type-badge type-lab">LAB</span></td>
-            <td class="date-cell">2025-01-29</td>
-            <td><span class="status-done">● embedding complete</span></td>
-          </tr>
-          <tr>
-            <td class="filename-cell">
-              <span class="file-icon">▸</span> week03_normalization.pdf
-            </td>
-            <td><span class="type-badge type-lecture">LECTURE</span></td>
-            <td class="date-cell">2025-02-03</td>
-            <td><span class="status-done">● embedding complete</span></td>
-          </tr>
-          <tr>
-            <td class="filename-cell">
-              <span class="file-icon">▸</span> midterm_exam_sp25.pdf
-            </td>
-            <td><span class="type-badge type-exam">EXAM</span></td>
-            <td class="date-cell">2025-02-10</td>
-            <td><span class="status-done">● embedding complete</span></td>
-          </tr>
-          <tr>
-            <td class="filename-cell">
-              <span class="file-icon">▸</span> week04_transactions.pdf
-            </td>
-            <td><span class="type-badge type-lecture">LECTURE</span></td>
-            <td class="date-cell">2025-02-17</td>
-            <td>
-              <span class="status-processing">◌ processing<span class="cursor-blink-sm">_</span></span>
-            </td>
-          </tr>
-          <tr>
-            <td class="filename-cell">
-              <span class="file-icon">▸</span> lab_03_joins_and_aggregates.pdf
-            </td>
-            <td><span class="type-badge type-lab">LAB</span></td>
-            <td class="date-cell">2025-02-18</td>
-            <td>
-              <span class="status-processing">◌ processing<span class="cursor-blink-sm">_</span></span>
-            </td>
+            <td colspan="4" class="text-muted text-center p-4">Loading materials...</td>
           </tr>
         </tbody>
       </table>
@@ -187,6 +124,28 @@
             $ link drive folder
           </button>
         </div>
+        
+        <!-- Sync from Drive Button -->
+        <div class="drive-sync-row">
+          <button class="btn-term btn-term-outline" id="syncDriveBtn">
+            $ sync from drive
+          </button>
+          <span class="drive-sync-comment">// import files from linked Google Drive folder</span>
+        </div>
+        
+        <!-- File Selection Area (hidden by default) -->
+        <div id="driveFilesSection" class="drive-files-section" style="display:none;">
+          <div class="drive-section-title">
+            <span class="prompt">$</span> select files to import:
+          </div>
+          <div id="driveFilesList" class="drive-files-list"></div>
+          <div class="drive-sync-actions">
+            <button class="btn-term btn-term-primary" id="importSelectedBtn">
+              $ import selected
+            </button>
+          </div>
+        </div>
+        
         <div id="driveFeedback" class="upload-feedback" style="display:none;"></div>
       </div>
 
@@ -200,7 +159,7 @@
   <section class="tab-panel" id="tab-students">
 
     <div class="section-header">
-      <span class="prompt">$</span> cat ./students/CPTS_451/roster.csv
+      <span class="prompt">$</span> cat ./students/<span id="studentsCourseCode">---</span>/roster.csv
       <span class="cursor-blink">█</span>
     </div>
 
@@ -219,74 +178,16 @@
             <th>queries</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="studentsTableBody">
           <tr>
-            <td>Alice Nguyen</td>
-            <td class="email-cell">a.nguyen@wsu.edu</td>
-            <td class="date-cell">2025-01-13</td>
-            <td class="query-cell"><span class="query-count">47</span></td>
-          </tr>
-          <tr>
-            <td>Ben Okafor</td>
-            <td class="email-cell">b.okafor@wsu.edu</td>
-            <td class="date-cell">2025-01-13</td>
-            <td class="query-cell"><span class="query-count">31</span></td>
-          </tr>
-          <tr>
-            <td>Chloe Martinez</td>
-            <td class="email-cell">c.martinez@wsu.edu</td>
-            <td class="date-cell">2025-01-14</td>
-            <td class="query-cell"><span class="query-count">62</span></td>
-          </tr>
-          <tr>
-            <td>David Kim</td>
-            <td class="email-cell">d.kim@wsu.edu</td>
-            <td class="date-cell">2025-01-14</td>
-            <td class="query-cell"><span class="query-count">19</span></td>
-          </tr>
-          <tr>
-            <td>Ella Patel</td>
-            <td class="email-cell">e.patel@wsu.edu</td>
-            <td class="date-cell">2025-01-15</td>
-            <td class="query-cell"><span class="query-count">88</span></td>
-          </tr>
-          <tr>
-            <td>Felix Torres</td>
-            <td class="email-cell">f.torres@wsu.edu</td>
-            <td class="date-cell">2025-01-15</td>
-            <td class="query-cell"><span class="query-count">24</span></td>
-          </tr>
-          <tr>
-            <td>Grace Liu</td>
-            <td class="email-cell">g.liu@wsu.edu</td>
-            <td class="date-cell">2025-01-16</td>
-            <td class="query-cell"><span class="query-count">55</span></td>
-          </tr>
-          <tr>
-            <td>Henry Walsh</td>
-            <td class="email-cell">h.walsh@wsu.edu</td>
-            <td class="date-cell">2025-01-17</td>
-            <td class="query-cell"><span class="query-count">11</span></td>
-          </tr>
-          <tr>
-            <td>Isla Fernandez</td>
-            <td class="email-cell">i.fernandez@wsu.edu</td>
-            <td class="date-cell">2025-01-17</td>
-            <td class="query-cell"><span class="query-count">73</span></td>
-          </tr>
-          <tr>
-            <td>James Cooper</td>
-            <td class="email-cell">j.cooper@wsu.edu</td>
-            <td class="date-cell">2025-01-18</td>
-            <td class="query-cell"><span class="query-count">40</span></td>
+            <td colspan="4" class="text-muted text-center p-4">Loading students...</td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <div class="students-footer">
-      <span class="text-dim">showing 10 of 34 students</span>
-      <button class="btn-term btn-term-outline btn-sm-term">$ load more</button>
+      <span class="text-dim" id="studentsCountFooter">loading...</span>
     </div>
 
   </section>
@@ -298,7 +199,7 @@
   <section class="tab-panel" id="tab-settings">
 
     <div class="section-header">
-      <span class="prompt">$</span> nano ./config/CPTS_451.conf
+      <span class="prompt">$</span> nano ./config/<span id="settingsCourseCode">---</span>.conf
       <span class="cursor-blink">█</span>
     </div>
 
@@ -314,7 +215,7 @@
             <span class="prompt">$</span> edit value:
           </label>
           <div class="settings-input-row">
-            <input type="text" id="settingCourseName" class="term-input" value="Databases" />
+            <input type="text" id="settingCourseName" class="term-input" value="" />
             <button class="btn-term btn-term-primary" id="saveNameBtn">$ save</button>
           </div>
           <div id="saveNameFeedback" class="upload-feedback" style="display:none;"></div>
@@ -331,7 +232,7 @@
             <span class="prompt">$</span> current value: <span class="settings-comment">// read-only</span>
           </label>
           <div class="settings-input-row">
-            <input type="text" id="settingClassCode" class="term-input term-input-readonly" value="XK9-P2M" readonly />
+            <input type="text" id="settingClassCode" class="term-input term-input-readonly" value="" readonly />
             <button class="btn-term btn-term-outline" id="regenCodeBtn">$ regenerate code</button>
           </div>
           <div id="regenFeedback" class="upload-feedback" style="display:none;"></div>
@@ -388,6 +289,163 @@
 
   // Get course ID from URL or page data
   const courseId = window.location.pathname.split('/instructor/course/')[1] || '';
+  
+  // Show debug info
+  const debugInfo = document.getElementById('debugInfo');
+  if (debugInfo) {
+    debugInfo.style.display = 'block';
+    debugInfo.textContent = `Course ID from URL: "${courseId}"`;
+    debugInfo.style.cssText = 'position:fixed; bottom:10px; right:10px; background:#fff; color:#000; padding:10px; z-index:9999; font-size:12px;';
+  }
+  
+  console.log('Course page loaded, courseId:', courseId);
+
+  // ── Load course details on page load ───────────────────────────────
+  async function loadCourseDetails() {
+    console.log('loadCourseDetails called, courseId:', courseId);
+    if (!courseId) return;
+    try {
+      // Get course info
+      const response = await fetch(`/course/${courseId}`);
+      console.log('/course response status:', response.status);
+      if (response.ok) {
+        const course = await response.json();
+        console.log('Course data received:', course);
+        // Update header - with null checks
+        const nameDisplay = document.getElementById('courseNameDisplay');
+        const codeDisplay = document.getElementById('courseCodeDisplay');
+        if (nameDisplay) nameDisplay.textContent = course.name || 'Unknown';
+        if (codeDisplay) codeDisplay.textContent = course.code || '---';
+        
+        // Update section headers - with null checks
+        const courseCode = course.code || '---';
+        const materialsCode = document.getElementById('materialsCourseCode');
+        const studentsCode = document.getElementById('studentsCourseCode');
+        const settingsCode = document.getElementById('settingsCourseCode');
+        if (materialsCode) materialsCode.textContent = courseCode;
+        if (studentsCode) studentsCode.textContent = courseCode;
+        if (settingsCode) settingsCode.textContent = courseCode;
+        
+        // Update settings form - with null checks
+        const courseNameInput = document.getElementById('settingCourseName');
+        const classCodeInput = document.getElementById('settingClassCode');
+        if (courseNameInput) courseNameInput.value = course.name || '';
+        if (classCodeInput) {
+          classCodeInput.value = course.code || '';
+          console.log('Setting class code input to:', course.code);
+        }
+        
+        // Update archive toggle
+        const archiveToggle = document.getElementById('archiveToggle');
+        if (archiveToggle) archiveToggle.checked = !course.is_active;
+      } else {
+        console.error('Failed to load course, status:', response.status);
+      }
+      
+      // Get teacher name
+      const authRes = await fetch('/auth/me');
+      if (authRes.ok) {
+        const authData = await authRes.json();
+        if (authData.user) {
+          document.getElementById('teacherNameDisplay').textContent = authData.user.full_name || 'Teacher';
+        }
+      }
+    } catch (error) {
+      console.error('Load course details error:', error);
+    }
+  }
+
+  // Load materials and students
+  async function loadMaterials(courseId) {
+    if (!courseId) return;
+    try {
+      const response = await fetch(`/api/materials/${courseId}`);
+      const data = await response.json();
+      if (response.ok && data.length > 0) {
+        updateMaterialsTable(data);
+      } else {
+        // Show empty state
+        const tbody = document.getElementById('materialsTableBody');
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center p-4">No materials uploaded yet</td></tr>';
+        }
+      }
+    } catch (error) {
+      console.error('Load materials error:', error);
+    }
+  }
+  
+  function updateMaterialsTable(materials) {
+    const tbody = document.getElementById('materialsTableBody');
+    if (!tbody) return;
+    
+    if (materials.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center p-4">No materials uploaded yet</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = materials.map(m => `
+      <tr>
+        <td class="filename-cell">
+          <span class="file-icon">▸</span> ${escapeHtml(m.file_name || 'Unknown file')}
+        </td>
+        <td><span class="type-badge type-lecture">${m.source_type || 'FILE'}</span></td>
+        <td class="date-cell">${m.embedded_at ? new Date(m.embedded_at).toISOString().split('T')[0] : 'N/A'}</td>
+        <td><span class="status-done">● ${m.chunks_count || 0} chunks</span></td>
+      </tr>
+    `).join('');
+  }
+
+  async function loadStudents(courseId) {
+    if (!courseId) return;
+    try {
+      const response = await fetch(`/api/courses/${courseId}/students`);
+      const data = await response.json();
+      if (response.ok && data.students) {
+        updateStudentsTable(data.students);
+      }
+    } catch (error) {
+      console.error('Load students error:', error);
+    }
+  }
+  
+  function updateStudentsTable(students) {
+    const tbody = document.getElementById('studentsTableBody');
+    const countDisplay = document.getElementById('studentsCountDisplay');
+    if (!tbody) return;
+    
+    // Update count
+    if (countDisplay) {
+      countDisplay.textContent = `showing ${students.length} of ${students.length} students`;
+    }
+    
+    if (students.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center p-4">No students enrolled yet</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = students.map(s => `
+      <tr>
+        <td>${escapeHtml(s.full_name || 'Unknown')}</td>
+        <td>${escapeHtml(s.email || '')}</td>
+        <td>${s.enrolled_at ? new Date(s.enrolled_at).toISOString().split('T')[0] : 'N/A'}</td>
+        <td><span class="status-done">● active</span></td>
+      </tr>
+    `).join('');
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+  }
+  
+  // Initialize with course data
+  if (courseId) {
+    loadCourseDetails();
+    loadMaterials(courseId);
+    loadStudents(courseId);
+  }
 
   // ── Upload materials ───────────────────────────────────────────
   document.getElementById('uploadBtn').addEventListener('click', async () => {
@@ -437,14 +495,80 @@
   async function loadMaterials(courseId) {
     if (!courseId) return;
     try {
-      const response = await fetch(`/api/courses/${courseId}/materials`);
+      const response = await fetch(`/api/materials/${courseId}`);
       const data = await response.json();
-      if (response.ok && data.materials) {
-        // Update materials table if needed
+      if (response.ok && data.length > 0) {
+        updateMaterialsTable(data);
       }
     } catch (error) {
       console.error('Load materials error:', error);
     }
+  }
+  
+  function updateMaterialsTable(materials) {
+    const tbody = document.querySelector('#tab-materials .term-table tbody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = materials.map(m => `
+      <tr>
+        <td class="filename-cell">
+          <span class="file-icon">▸</span> ${escapeHtml(m.file_name || 'Unknown file')}
+        </td>
+        <td><span class="type-badge type-lecture">${m.source_type || 'FILE'}</span></td>
+        <td class="date-cell">${m.embedded_at ? new Date(m.embedded_at).toISOString().split('T')[0] : 'N/A'}</td>
+        <td><span class="status-done">● ${m.chunks_count || 0} chunks</span></td>
+      </tr>
+    `).join('');
+  }
+
+  async function loadStudents(courseId) {
+    if (!courseId) return;
+    try {
+      const response = await fetch(`/api/courses/${courseId}/students`);
+      const data = await response.json();
+      if (response.ok && data.students) {
+        updateStudentsTable(data.students);
+      }
+    } catch (error) {
+      console.error('Load students error:', error);
+    }
+  }
+  
+  function updateStudentsTable(students) {
+    const tbody = document.querySelector('#tab-students .term-table tbody');
+    const footer = document.getElementById('studentsCountFooter');
+    if (!tbody) return;
+    
+    // Update footer count
+    if (footer) {
+      footer.textContent = `showing ${students.length} of ${students.length} students`;
+    }
+    
+    if (students.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No students enrolled yet</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = students.map(s => `
+      <tr>
+        <td>${escapeHtml(s.full_name || 'Unknown')}</td>
+        <td>${escapeHtml(s.email || '')}</td>
+        <td>${s.enrolled_at ? new Date(s.enrolled_at).toISOString().split('T')[0] : 'N/A'}</td>
+        <td><span class="status-done">● active</span></td>
+      </tr>
+    `).join('');
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+  }
+  
+  // Initialize with course data
+  if (courseId) {
+    loadMaterials(courseId);
+    loadStudents(courseId);
   }
 
   // ── Drive link feedback ───────────────────────────────────────
@@ -486,6 +610,99 @@
       }
     } catch (error) {
       showFeedback(fb, '> ERROR: Failed to connect Drive', 'error');
+    }
+  });
+
+  // ── Sync from Google Drive ───────────────────────────────────────
+  document.getElementById('syncDriveBtn').addEventListener('click', async () => {
+    const fb = document.getElementById('driveFeedback');
+    const filesSection = document.getElementById('driveFilesSection');
+    const filesList = document.getElementById('driveFilesList');
+    
+    try {
+      showFeedback(fb, '> Fetching files from Google Drive...', 'info');
+      
+      const response = await fetch(`/drive/files/${courseId}`);
+      const data = await response.json();
+      
+      if (data.needs_auth) {
+        // Need OAuth - redirect to auth
+        showFeedback(fb, '> Redirecting to Google for authorization...', 'info');
+        window.location.href = data.auth_url;
+        return;
+      }
+      
+      if (response.ok && data.files && data.files.length > 0) {
+        showFeedback(fb, `> Found ${data.files.length} files in Drive folder`, 'success');
+        
+        // Show files section
+        filesSection.style.display = 'block';
+        filesList.innerHTML = '';
+        
+        data.files.forEach(file => {
+          const fileItem = document.createElement('div');
+          fileItem.className = 'drive-file-item';
+          fileItem.innerHTML = `
+            <label class="drive-file-label">
+              <input type="checkbox" class="drive-file-checkbox" value="${file.id}" data-name="${file.name}" />
+              <span class="file-icon">▸</span>
+              <span class="file-name">${escapeHtml(file.name)}</span>
+              <span class="file-type">${file.type}</span>
+            </label>
+          `;
+          filesList.appendChild(fileItem);
+        });
+      } else if (data.note) {
+        showFeedback(fb, `> ${data.note}`, 'info');
+      } else {
+        showFeedback(fb, '> ERROR: No files found in folder', 'error');
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+      showFeedback(fb, '> ERROR: ' + error.message, 'error');
+    }
+  });
+
+  // ── Import selected files ───────────────────────────────────────
+  document.getElementById('importSelectedBtn').addEventListener('click', async () => {
+    const fb = document.getElementById('driveFeedback');
+    const checkboxes = document.querySelectorAll('.drive-file-checkbox:checked');
+    
+    if (checkboxes.length === 0) {
+      showFeedback(fb, '> ERROR: Select at least one file', 'error');
+      return;
+    }
+    
+    const fileUrls = Array.from(checkboxes).map(cb => cb.value);
+    const fileNames = Array.from(checkboxes).map(cb => cb.dataset.name);
+    
+    try {
+      showFeedback(fb, `> Importing ${fileUrls.length} files... This may take a while.`, 'info');
+      
+      const response = await fetch('/drive/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          course_id: courseId,
+          file_urls: fileUrls,
+          file_names: fileNames
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        showFeedback(fb, `> ✓ Successfully imported ${data.imported_count} files!`, 'success');
+        // Hide files section
+        document.getElementById('driveFilesSection').style.display = 'none';
+        // Refresh materials
+        loadMaterials(courseId);
+      } else {
+        showFeedback(fb, `> ERROR: ${data.error || 'Import failed'}`, 'error');
+      }
+    } catch (error) {
+      console.error('Import error:', error);
+      showFeedback(fb, '> ERROR: ' + error.message, 'error');
     }
   });
 

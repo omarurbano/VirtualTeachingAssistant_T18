@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VTA // Analytics — CPTS_451</title>
+  <title>VTA // Analytics</title>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/instructor.css') }}" />
@@ -13,16 +13,16 @@
 <!-- ░░ TOP BAR ░░ -->
 <header class="top-bar">
   <div class="top-bar-left">
-    <a href="/instructor/course/cpts451" class="back-link">
+    <a href="#" class="back-link" id="backLink">
       <span class="prompt">$</span> cd ../course
     </a>
     <span class="top-bar-sep">/</span>
     <span class="top-bar-course-name">
-      <span class="accent">&gt;</span> analytics <span class="top-bar-sep">::</span> CPTS_451
+      <span class="accent">&gt;</span> analytics <span class="top-bar-sep">::</span> <span id="analyticsCourseCode">---</span>
     </span>
   </div>
   <div class="top-bar-right">
-    <span class="welcome-text">Welcome, <span class="accent">Dr. Reynolds</span></span>
+    <span class="welcome-text">Welcome, <span class="accent" id="teacherNameDisplay">Teacher</span></span>
     <a href="#" class="btn-term btn-term-outline">$ logout</a>
   </div>
 </header>
@@ -724,6 +724,34 @@ function clearFilter() {
 
 /* ── Initial render ───────────────────────────────────────────── */
 (async function init() {
+  // Get course ID from URL
+  const courseId = window.location.pathname.split('/instructor/analytics/')[1] || '';
+  
+  // Update back link
+  document.getElementById('backLink').href = '/instructor/course/' + courseId;
+  
+  // Load course details
+  if (courseId) {
+    try {
+      const courseRes = await fetch(`/course/${courseId}`);
+      if (courseRes.ok) {
+        const course = await courseRes.json();
+        document.getElementById('analyticsCourseCode').textContent = course.code || courseId;
+      }
+      
+      // Get teacher name
+      const authRes = await fetch('/auth/me');
+      if (authRes.ok) {
+        const authData = await authRes.json();
+        if (authData.user) {
+          document.getElementById('teacherNameDisplay').textContent = authData.user.full_name || 'Teacher';
+        }
+      }
+    } catch (e) {
+      console.error('Error loading course details:', e);
+    }
+  }
+  
   // Show loading states
   document.getElementById('queryHeaderText').textContent = 'recent_queries --loading...';
   

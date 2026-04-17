@@ -30,32 +30,8 @@
       <span class="prompt">$</span> ls ./courses
     </div>
 
-    <ul class="course-list">
-      <li class="course-list-item active" data-course="cpts451">
-        <span class="prompt">&gt;</span>
-        <span class="course-list-code">CPTS_451</span>
-        <span class="course-list-name">Databases</span>
-      </li>
-      <li class="course-list-item" data-course="cpts355">
-        <span class="prompt">&gt;</span>
-        <span class="course-list-code">CPTS_355</span>
-        <span class="course-list-name">Programming Languages</span>
-      </li>
-      <li class="course-list-item" data-course="cpts421">
-        <span class="prompt">&gt;</span>
-        <span class="course-list-code">CPTS_421</span>
-        <span class="course-list-name">Software Engineering</span>
-      </li>
-      <li class="course-list-item" data-course="cpts360">
-        <span class="prompt">&gt;</span>
-        <span class="course-list-code">CPTS_360</span>
-        <span class="course-list-name">Systems Programming</span>
-      </li>
-      <li class="course-list-item" data-course="cpts415">
-        <span class="prompt">&gt;</span>
-        <span class="course-list-code">CPTS_415</span>
-        <span class="course-list-name">Machine Learning</span>
-      </li>
+    <ul class="course-list" id="sidebarCourses">
+      <li class="text-muted p-2">Loading courses...</li>
     </ul>
 
     <div class="sidebar-footer">
@@ -350,10 +326,37 @@
       
       if (response.ok && data.courses) {
         updateCoursesGrid(data.courses);
+        updateSidebar(data.courses);
       }
     } catch (error) {
       console.error('Load courses error:', error);
     }
+  }
+  
+  function updateSidebar(courses) {
+    const sidebar = document.getElementById('sidebarCourses');
+    if (!sidebar) return;
+    
+    if (!courses || courses.length === 0) {
+      sidebar.innerHTML = '<li class="text-muted p-2">No courses found</li>';
+      return;
+    }
+    
+    sidebar.innerHTML = courses.map((course, idx) => `
+      <li class="course-list-item ${idx === 0 ? 'active' : ''}" data-course="${course.id}">
+        <span class="prompt">&gt;</span>
+        <span class="course-list-code">${escapeHtml(course.code)}</span>
+        <span class="course-list-name">${escapeHtml(course.name)}</span>
+      </li>
+    `).join('');
+    
+    // Re-attach click handlers
+    document.querySelectorAll('.course-list-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.course-list-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
   }
   
   function updateCoursesGrid(courses) {
