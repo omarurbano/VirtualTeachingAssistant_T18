@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS enrollments (
 CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_course ON enrollments(course_id);
 
+-- 7. VECTOR CHUNKS TABLE - Store vector embeddings persistently
+CREATE TABLE IF NOT EXISTS vector_chunks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    course_id TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    file_name TEXT,
+    chunk_text TEXT NOT NULL,
+    chunk_index INTEGER DEFAULT 0,
+    embedding BYTEA, -- Use BYTEA in PostgreSQL for binary
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_vector_course ON vector_chunks(course_id);
+CREATE INDEX IF NOT EXISTS idx_vector_file ON vector_chunks(file_id);
+
 -- ============================================
 -- ENABLE POSTGIS/pgvector IF NEEDED
 -- ============================================

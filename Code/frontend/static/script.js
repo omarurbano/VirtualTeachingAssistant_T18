@@ -38,7 +38,14 @@ async function init() {
     
     // Check for course context in URL (student joined course)
     const urlParams = new URLSearchParams(window.location.search);
-    const courseId = urlParams.get('course');
+    let courseId = urlParams.get('course');
+    
+    console.log('URL params:', window.location.search, 'courseId:', courseId);
+    
+    // Fix: don't use the string "undefined"
+    if (courseId === 'undefined' || !courseId) {
+        courseId = null;
+    }
     
     if (courseId) {
         window.currentCourseId = courseId;
@@ -425,17 +432,27 @@ async function sendMessage() {
     
     // Get course_id from URL or global variable
     const urlParams = new URLSearchParams(window.location.search);
-    const courseId = urlParams.get('course') || window.currentCourseId || null;
+    let courseId = urlParams.get('course') || window.currentCourseId || null;
+    
+    // Don't send undefined as string - send null instead
+    if (courseId === 'undefined' || courseId === undefined || courseId === null || courseId === '') {
+        courseId = null;
+    }
     
     try {
+        const bodyObj = { 
+            question: message, 
+            max_results: 5
+        };
+        // Only add course_id if it's valid
+        if (courseId) {
+            bodyObj.course_id = courseId;
+        }
+        
         const response = await fetch(`${API_BASE}/api/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                question: message, 
-                max_results: 5,
-                course_id: courseId  // Send course_id for data leakage prevention
-            })
+            body: JSON.stringify(bodyObj)
         });
         
         const data = await response.json();

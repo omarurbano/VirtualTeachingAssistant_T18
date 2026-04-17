@@ -335,6 +335,101 @@ function extractTopics(question) {
 }
 
 // ============================================
+// VECTOR CHUNKS API - Persistent storage
+// ============================================
+
+// Save vector chunks to database
+app.post('/api/vector-chunks', async (req, res) => {
+    const { chunks } = req.body;
+    if (!chunks || !Array.isArray(chunks)) {
+        return res.status(400).json({ error: 'chunks array required' });
+    }
+    
+    try {
+        // Delete existing chunks for this file first
+        const fileId = chunks[0]?.file_id;
+        if (fileId) {
+            await supabase.from('vector_chunks').delete().eq('file_id', fileId);
+        }
+        
+        // Insert new chunks
+        const records = chunks.map(c => ({
+            course_id: c.course_id,
+            file_id: c.file_id,
+            file_name: c.file_name,
+            chunk_text: c.text ? c.text.substring(0, 10000) : '', // Limit text length
+            chunk_index: c.chunk_index,
+            embedding: c.embedding ? Buffer.from(new Float32Array(c.embedding).buffer) : null, // Convert to buffer
+            metadata: c.metadata || {}
+        }));
+        
+        const { data, error } = await supabase.from('vector_chunks').insert(records);
+        if (error) throw error;
+        
+        res.json({ success: true, count: records.length });
+    } catch (err) {
+        console.error('Save vector chunks error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get vector chunks for a course (all chunks, for loading into vector store)
+app.get('/api/vector-chunks/:courseId', async (req, res) => {
+    const { courseId } = req.params;
+    
+    try {
+        const { data, error } = await supabase
+            .from('vector_chunks')
+            .select('*')
+            .eq('course_id', courseId);
+        
+        if (error) throw error;
+        
+        // Convert buffer back to array
+        const chunks = data.map(row => ({
+            course_id: row.course_id,
+            file_id: row.file_id,
+            file_name: row.file_name,
+            text: row.chunk_text,
+            chunk_index: row.chunk_index,
+            embedding: Array.from(new Float32Array(row.embedding)),
+            metadata: row.metadata
+        }));
+        
+        res.json(chunks);
+    } catch (err) {
+        console.error('Get vector chunks error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get all vector chunks (for loading all at startup)
+app.get('/api/vector-chunks', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('vector_chunks')
+            .select('*');
+        
+        if (error) throw error;
+        
+        const chunks = data.map(row => ({
+            course_id: row.course_id,
+            file_id: row.file_id,
+            file_name: row.file_name,
+            text: row.chunk_text,
+            chunk_index: row.chunk_index,
+            embedding: Array.from(new Float32Array(row.embedding)),
+            metadata: row.metadata
+        }));
+        
+        res.json(chunks);
+    } catch (err) {
+        console.error('Get all vector chunks error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================================
 // START SERVER
 // ============================================
 
