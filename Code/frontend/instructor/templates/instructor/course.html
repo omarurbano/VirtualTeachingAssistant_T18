@@ -632,22 +632,64 @@
         return;
       }
       
-      if (response.ok && data.files && data.files.length > 0) {
-        showFeedback(fb, `> Found ${data.files.length} files in Drive folder`, 'success');
+      if (data.error) {
+        showFeedback(fb, '> ERROR: ' + data.error, 'error');
+        return;
+      }
+      
+      // Get file array (handles both old and new format)
+      const files = data.files || [];
+      
+      if (response.ok && files && files.length > 0) {
+        // Get counts from new format or calculate
+        const docCount = data.counts?.documents || data.documents?.length || 0;
+        const vidCount = data.counts?.videos || data.videos?.length || 0;
+        const audCount = data.counts?.audio || data.audio?.length || 0;
+        const totalCount = data.counts?.total || files.length;
+        
+        showFeedback(fb, `> Found ${totalCount} files (${docCount} docs, ${vidCount} videos, ${audCount} audio)`, 'success');
         
         // Show files section
         filesSection.style.display = 'block';
         filesList.innerHTML = '';
         
-        data.files.forEach(file => {
+        // Render files with proper type icons
+        files.forEach(file => {
+          // Determine icon based on MIME type
+          let icon = '▸';
+          let typeLabel = 'File';
+          const mimeType = file.mimeType || file.type || '';
+          
+          if (mimeType.startsWith('video/')) {
+            icon = '🎬';
+            typeLabel = 'Video';
+          } else if (mimeType.startsWith('audio/')) {
+            icon = '🎧';
+            typeLabel = 'Audio';
+          } else if (mimeType.includes('pdf')) {
+            icon = '📄';
+            typeLabel = 'PDF';
+          } else if (mimeType.includes('document')) {
+            icon = '📝';
+            typeLabel = 'Doc';
+          } else if (mimeType.includes('spreadsheet')) {
+            icon = '📊';
+            typeLabel = 'Sheet';
+          } else if (mimeType.includes('presentation')) {
+            icon = '📽️';
+            typeLabel = 'Slides';
+          } else {
+            typeLabel = 'File';
+          }
+          
           const fileItem = document.createElement('div');
           fileItem.className = 'drive-file-item';
           fileItem.innerHTML = `
             <label class="drive-file-label">
-              <input type="checkbox" class="drive-file-checkbox" value="${file.id}" data-name="${file.name}" />
-              <span class="file-icon">▸</span>
+              <input type="checkbox" class="drive-file-checkbox" value="${file.id}" data-name="${file.name}" data-type="${mimeType}" />
+              <span class="file-icon">${icon}</span>
               <span class="file-name">${escapeHtml(file.name)}</span>
-              <span class="file-type">${file.type}</span>
+              <span class="file-type">${typeLabel}</span>
             </label>
           `;
           filesList.appendChild(fileItem);
@@ -655,7 +697,7 @@
       } else if (data.note) {
         showFeedback(fb, `> ${data.note}`, 'info');
       } else {
-        showFeedback(fb, '> ERROR: No files found in folder', 'error');
+        showFeedback(fb, '> ERROR: No supported files found in folder', 'error');
       }
     } catch (error) {
       console.error('Sync error:', error);
@@ -673,19 +715,22 @@
       return;
     }
     
-    const fileUrls = Array.from(checkboxes).map(cb => cb.value);
-    const fileNames = Array.from(checkboxes).map(cb => cb.dataset.name);
+    // Collect file data including MIME type
+    const fileData = Array.from(checkboxes).map(cb => ({
+      id: cb.value,
+      name: cb.dataset.name,
+      mimeType: cb.dataset.type || 'application/octet-stream'
+    }));
     
     try {
-      showFeedback(fb, `> Importing ${fileUrls.length} files... This may take a while.`, 'info');
+      showFeedback(fb, `> Importing ${fileData.length} files... This may take a while.`, 'info');
       
       const response = await fetch('/drive/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           course_id: courseId,
-          file_urls: fileUrls,
-          file_names: fileNames
+          files: fileData
         })
       });
       

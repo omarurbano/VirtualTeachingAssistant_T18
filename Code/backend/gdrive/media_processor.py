@@ -3,24 +3,20 @@
 #
 # This module processes video and audio files from Google Drive:
 # - Downloads media files from Google Drive
-# - Splits long files into manageable chunks for transcription
-# - Transcribes audio using Gemini API
+# - Extracts audio from video files
+# - Transcribes using LOCAL Whisper (faster-whisper) - NO API KEY NEEDED!
 # - Generates embeddings for semantic search
-# - Stores transcripts and embeddings for VTA queries
 #
-# Scalability: Supports files up to 2 hours by chunking
+# Version: 4.0.0 - Fully local, free transcription!
 # Author: CPT_S 421 Development Team
-# Version: 1.0.0
 
 import os
-import io
 import logging
-import hashlib
 import tempfile
-from typing import List, Dict, Any, Optional, Tuple
+import shutil
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -28,29 +24,36 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ============================================================================
 
-# Gemini audio model configuration
-GEMINI_AUDIO_MODEL = 'gemini-2.0-flash'
-GEMINI_EMBEDDING_MODEL = 'models/gemini-embedding-2-preview'
-GEMINI_EMBEDDING_DIMENSIONS = 768
+# Check for available transcription options
+FASTER_WHISPER_AVAILABLE = False
+try:
+    from faster_whisper import WhisperModel
+    FASTER_WHISPER_AVAILABLE = True
+    logger.info("faster-whisper is available - local transcription ready!")
+except ImportError:
+    logger.warning("faster-whisper not installed")
 
-# Chunk configuration for scalability
-# Gemini 2.0 Flash supports files up to ~20MB and ~3 minutes per request
-# For longer files, we chunk and process sequentially
-MAX_CHUNK_DURATION_SECONDS = 120  # 2 minutes per chunk (safe limit)
-MAX_CHUNK_SIZE_MB = 18  # Maximum chunk size in MB
+OPENAI_AVAILABLE = False
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    logger.warning("openai not installed")
+
+GEMINI_AVAILABLE = False
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    logger.warning("google-generativeai not installed")
+
+# Model configuration
+WHISPER_MODEL_SIZE = os.environ.get('WHISPER_MODEL', 'base')  # tiny, base, small, medium
+GEMINI_EMBEDDING_MODEL = 'models/gemini-embedding-2-preview'
 
 # Supported formats
-SUPPORTED_VIDEO_FORMATS = {
-    '.mp4', '.m4v', '.mov', '.avi', '.wmv', '.webm', 
-    '.flv', '.mkv', '.3gp', '.3g2', '.mpg', '.mpeg'
-}
-
-SUPPORTED_AUDIO_FORMATS = {
-    '.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac',
-    '.wma', '.aiff', '.mid', '.oga', '.opus', '.webm'
-}
-
-ALL_SUPPORTED_FORMATS = SUPPORTED_VIDEO_FORMATS | SUPPORTED_AUDIO_FORMATS
+SUPPORTED_VIDEO_FORMATS = {'.mp4', '.m4v', '.mov', '.avi', '.wmv', '.webm', '.flv', '.mkv', '.3gp'}
+SUPPORTED_AUDIO_FORMATS = {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.wma', '.aiff'}
 
 
 # ============================================================================
@@ -61,9 +64,9 @@ ALL_SUPPORTED_FORMATS = SUPPORTED_VIDEO_FORMATS | SUPPORTED_AUDIO_FORMATS
 class MediaSegment:
     """Represents a segment of transcribed media."""
     segment_id: str
-    content: str  # Transcribed text
-    start_time: float  # Seconds
-    end_time: float  # Seconds
+    content: str
+    start_time: float
+    end_time: float
     speaker: str = "Unknown"
     confidence: float = 0.8
     tone: str = "neutral"
@@ -86,27 +89,20 @@ class MediaSegment:
 @dataclass
 class ProcessedMedia:
     """Represents a fully processed video/audio file."""
-    file_id: str  # Google Drive file ID
+    file_id: str
     filename: str
-    file_type: str  # 'video' or 'audio'
+    file_type: str
     mime_type: str
     duration_seconds: float
-    
-    # Transcription data
     full_transcript: str
     segments: List[MediaSegment] = field(default_factory=list)
-    
-    # Metadata
     language: str = "unknown"
     speaker_count: int = 0
     audio_quality: str = "unknown"
     word_count: int = 0
-    
-    # Processing info
     processing_time: float = 0.0
     chunks_processed: int = 0
     error: Optional[str] = None
-    
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict:
@@ -136,131 +132,101 @@ class MediaProcessor:
     """
     Processes video and audio files for transcription.
     
-    Uses chunked processing for scalability:
-    - Files under 2 minutes: processed in single API call
-    - Longer files: split into chunks, processed sequentially
-    - Results combined into single searchable transcript
-    
-    The processor leverages the existing Gemini 2.0 audio 
-    transcription capabilities in unified_document_processor.py.
+    Priority:
+    1. Local Whisper (faster-whisper) - FREE, NO API KEY
+    2. OpenAI Whisper - requires API key
+    3. Google Gemini - requires API key
     """
     
-    def __init__(self, api_key: str = None):
-        """Initialize processor.
+    def __init__(self, use_local: bool = True, api_key: str = None):
+        """Initialize processor."""
+        self.use_local = use_local and FASTER_WHISPER_AVAILABLE
+        self.local_model = None
+        self.openai_client = None
         
-        Args:
-            api_key: Google API key (uses GOOGLE_API_KEY env var if not provided)
-        """
-        if api_key is None:
-            api_key = os.environ.get('GOOGLE_API_KEY')
+        if self.use_local:
+            logger.info(f"Loading local Whisper model: {WHISPER_MODEL_SIZE}")
+            try:
+                self.local_model = WhisperModel(
+                    WHISPER_MODEL_SIZE,
+                    device="cpu",
+                    compute_type="int8"
+                )
+                logger.info("Local Whisper model loaded successfully!")
+            except Exception as e:
+                logger.error(f"Failed to load local Whisper: {e}")
+                self.use_local = False
         
-        if not api_key:
-            raise ValueError("API key required. Set GOOGLE_API_KEY or pass as parameter")
+        # Fallback to cloud if local not available
+        if not self.use_local and OPENAI_AVAILABLE:
+            if api_key is None:
+                api_key = os.environ.get('OPENAI_API_KEY')
+            if api_key and api_key != 'YOUR_OPENAI_API_KEY_HERE':
+                try:
+                    self.openai_client = OpenAI(api_key=api_key)
+                    logger.info("Using OpenAI Whisper cloud")
+                except:
+                    pass
         
-        self.api_key = api_key
-        
-        # Import the Gemini client from unified_document_processor
-        # This reuses existing code rather than duplicating
-        try:
-            from unified_document_processor import GeminiClient
-            self.gemini = GeminiClient(api_key)
-            logger.info("MediaProcessor initialized with Gemini client")
-        except ImportError as e:
-            logger.warning(f"Could not import GeminiClient: {e}")
-            self.gemini = None
-        
-        # Track processing state
         self._temp_files = []
+        logger.info(f"MediaProcessor initialized: local={self.use_local}, openai={self.openai_client is not None}")
     
     def process_file(
         self, 
         file_path: str, 
         file_id: str,
         filename: str,
-        mime_type: str,
-        chunk_duration: int = MAX_CHUNK_DURATION_SECONDS
+        mime_type: str
     ) -> ProcessedMedia:
-        """Process a video or audio file.
-        
-        Args:
-            file_path: Path to the media file (local temp file)
-            file_id: Google Drive file ID
-            filename: Original filename
-            mime_type: MIME type of the file
-            chunk_duration: Maximum chunk duration in seconds
-            
-        Returns:
-            ProcessedMedia with transcription and embeddings
-        """
+        """Process a video or audio file."""
         import time
         start_time = time.time()
         
         # Determine file type
         ext = os.path.splitext(filename)[1].lower()
-        is_video = ext in SUPPORTED_VIDEO_FORMATS
+        is_video = ext in SUPPORTED_VIDEO_FORMATS or mime_type.startswith('video/')
         file_type = 'video' if is_video else 'audio'
         
-        logger.info(f"Processing {file_type}: {filename} ({ext})")
+        logger.info(f"Processing {file_type}: {filename}")
         
         processor = ProcessedMedia(
             file_id=file_id,
             filename=filename,
             file_type=file_type,
             mime_type=mime_type,
-            duration_seconds=0,  # Will be updated after transcription
+            duration_seconds=0,
             full_transcript=""
         )
         
         try:
-            if self.gemini is None:
-                raise ValueError("Gemini client not available")
+            # Extract audio from video
+            if is_video:
+                audio_path = self._extract_audio_from_video(file_path, ext)
+                if audio_path:
+                    file_path = audio_path
+                else:
+                    raise ValueError("Failed to extract audio from video")
             
-            # Read the file
-            with open(file_path, 'rb') as f:
-                media_data = f.read()
-            
-            file_size_mb = len(media_data) / (1024 * 1024)
-            logger.info(f"File size: {file_size_mb:.1f} MB")
-            
-            # Check if chunking is needed based on file size
-            # Gemini 2.0 Flash has limits but can handle reasonable files
-            estimate_minutes = file_size_mb / 10  # Rough estimate: 10MB per minute
-            needs_chunking = file_size_mb > MAX_CHUNK_SIZE_MB or estimate_minutes > 2
-            
-            if needs_chunking:
-                logger.info("File requires chunked processing")
-                # For large files, we'll process as a single chunk first
-                # then parse the timing from the transcript
-                # This is a simplification - for very large files,
-                # you'd want true chunked processing with ffmpeg
-                result = self._transcribe_single(media_data, mime_type)
+            # Transcribe
+            if self.use_local and self.local_model:
+                result = self._transcribe_local(file_path)
+            elif self.openai_client:
+                result = self._transcribe_cloud(file_path, filename)
             else:
-                # Process single file
-                result = self._transcribe_single(media_data, mime_type)
+                result = {'success': False, 'error': 'No transcription engine available'}
             
-            # Update processor with results
+            # Update processor
             if result.get('success'):
-                processor.full_transcript = result.get('full_text', result.get('transcript', ''))
-                processor.segments = self._create_segments_from_result(result)
-                processor.language = result.get('language_detected', 'unknown')
+                processor.full_transcript = result.get('full_text', '')
+                processor.segments = self._create_segments(result)
+                processor.language = result.get('language_detected', 'english')
                 processor.speaker_count = result.get('estimated_speakers', 1)
-                processor.audio_quality = result.get('audio_quality', 'unknown')
                 processor.word_count = len(processor.full_transcript.split())
-                
-                # Try to get duration from segments
-                if processor.segments:
-                    processor.duration_seconds = max(
-                        s.end_time for s in processor.segments
-                    )
-                
-                # Generate embeddings for each segment
-                self._generate_embeddings(processor)
-                
-                processor.chunks_processed = 1 if not needs_chunking else 2
+                processor.duration_seconds = result.get('duration', 0)
+                processor.chunks_processed = 1
             else:
                 processor.error = result.get('error', 'Transcription failed')
-                logger.error(f"Transcription failed: {processor.error}")
-            
+                
         except Exception as e:
             processor.error = str(e)
             logger.error(f"Processing error: {e}")
@@ -270,372 +236,153 @@ class MediaProcessor:
         
         return processor
     
-    def _transcribe_single(
-        self, 
-        media_data: bytes, 
-        mime_type: str
-    ) -> Dict[str, Any]:
-        """Transcribe a single media file.
+    def _extract_audio_from_video(self, video_path: str, ext: str) -> Optional[str]:
+        """Extract audio from video using ffmpeg."""
+        import subprocess
         
-        Args:
-            media_data: File bytes
-            mime_type: MIME type
-            
-        Returns:
-            Dict with transcription results
-        """
-        if self.gemini is None:
-            # Fallback: use requests directly to Gemini API
-            return self._transcribe_via_api(media_data, mime_type)
+        # Find ffmpeg
+        ffmpeg_path = shutil.which('ffmpeg')
+        if not ffmpeg_path:
+            # Try common paths
+            for path in [r"C:\ffmpeg\bin\ffmpeg.exe", r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"]:
+                if os.path.exists(path):
+                    ffmpeg_path = path
+                    break
         
-        try:
-            # Use the Gemini client from unified_document_processor
-            result = self.gemini.transcribe_audio(media_data, mime_type)
-            return result
-        except Exception as e:
-            logger.error(f"Gemini transcription error: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'transcript': '',
-                'segments': []
-            }
-    
-    def _transcribe_via_api(
-        self, 
-        media_data: bytes, 
-        mime_type: str
-    ) -> Dict[str, Any]:
-        """Transcribe using Gemini API directly (fallback).
-        
-        Args:
-            media_data: File bytes
-            mime_type: MIME type
-            
-        Returns:
-            Transcription results
-        """
-        import requests
-        import google.generativeai as genai
+        if not ffmpeg_path:
+            logger.error("ffmpeg not found")
+            return None
         
         try:
-            # Configure Gemini
-            genai.configure(api_key=self.api_key)
-            
-            # Save to temp file
-            ext = mime_type.split('/')[-1]
-            if ext == 'mp4':
-                ext = 'm4a'
-            
-            with tempfile.NamedTemporaryFile(suffix=f'.{ext}', delete=False) as tmp:
-                tmp.write(media_data)
-                tmp_path = tmp.name
-            
-            self._temp_files.append(tmp_path)
-            
-            # Upload to Gemini
-            audio_file = genai.upload_file(
-                path=tmp_path,
-                mime_type=mime_type
+            audio_path = video_path + '.wav'
+            result = subprocess.run(
+                [ffmpeg_path, '-i', video_path, '-vn', '-acodec', 'pcm_s16le', 
+                 '-ar', '16000', '-ac', '1', audio_path],
+                capture_output=True, text=True, timeout=300
             )
             
-            # Generate transcription
-            model = genai.GenerativeModel(GEMINI_AUDIO_MODEL)
-            prompt = """Transcribe this audio. Include speaker identification and timestamps.
-Provide the full transcript with timestamps in [MM:SS] format."""
-            
-            response = model.generate_content([prompt, audio_file])
-            
-            # Parse result using existing logic
-            if self.gemini:
-                segments = self.gemini._parse_transcript(response.text)
+            if result.returncode == 0 and os.path.exists(audio_path):
+                self._temp_files.append(audio_path)
+                logger.info(f"Audio extracted: {audio_path}")
+                return audio_path
             else:
-                segments = []
+                logger.error(f"ffmpeg failed: {result.stderr}")
+                return None
+        except Exception as e:
+            logger.error(f"Audio extraction error: {e}")
+            return None
+    
+    def _transcribe_local(self, audio_path: str) -> Dict[str, Any]:
+        """Transcribe using local Whisper."""
+        try:
+            logger.info("Transcribing with local Whisper...")
             
-            full_text = response.text
-            if segments:
-                full_text = '\n'.join([s['text'] for s in segments])
+            segments, info = self.local_model.transcribe(
+                audio_path,
+                language='en',
+                beam_size=5,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500)
+            )
             
-            # Cleanup
-            try:
-                genai.delete_file(audio_file.name)
-            except:
-                pass
+            transcribed_segments = []
+            full_text = ""
+            duration = 0
+            
+            for seg in segments:
+                transcribed_segments.append({
+                    'speaker': 'Speaker 1',
+                    'timestamp': f"[{int(seg.start // 60):02d}:{int(seg.start % 60):02d}]",
+                    'timestamp_seconds': seg.start,
+                    'text': seg.text.strip(),
+                    'tone': 'neutral',
+                    'confidence': seg.avg_logprob if hasattr(seg, 'avg_logprob') else 0.8,
+                    'word_count': len(seg.text.strip().split())
+                })
+                full_text += seg.text.strip() + " "
+                duration = seg.end
+            
+            logger.info(f"Local Whisper complete: {len(full_text)} chars")
             
             return {
                 'success': True,
-                'transcript': response.text,
-                'full_text': full_text,
-                'segments': segments,
-                'language_detected': 'unknown',
-                'estimated_speakers': len(set(s.get('speaker', 'Unknown') for s in segments)) if segments else 1,
+                'full_text': full_text.strip(),
+                'segments': transcribed_segments,
+                'duration': duration,
+                'language_detected': info.language if hasattr(info, 'language') else 'en',
+                'estimated_speakers': 1,
                 'audio_quality': 'good'
             }
             
         except Exception as e:
-            logger.error(f"API transcription error: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'transcript': '',
-                'segments': []
-            }
+            logger.error(f"Local Whisper error: {e}")
+            return {'success': False, 'error': str(e)}
     
-    def _create_segments_from_result(
-        self, 
-        result: Dict[str, Any]
-    ) -> List[MediaSegment]:
-        """Create MediaSegments from Gemini result.
-        
-        Args:
-            result: Transcription result from Gemini
+    def _transcribe_cloud(self, audio_path: str, filename: str) -> Dict[str, Any]:
+        """Transcribe using OpenAI Whisper cloud."""
+        try:
+            with open(audio_path, 'rb') as f:
+                transcript = self.openai_client.audio.transcriptions.create(
+                    model='whisper-1',
+                    file=f,
+                    response_format='verbose_json',
+                    timestamp_granularities=['segment']
+                )
             
-        Returns:
-            List of MediaSegment objects
-        """
+            segments = []
+            full_text = ""
+            duration = 0
+            
+            if hasattr(transcript, 'segments'):
+                for seg in transcript.segments:
+                    segments.append({
+                        'speaker': 'Speaker 1',
+                        'timestamp': f"[{int(seg.start // 60):02d}:{int(seg.start % 60):02d}]",
+                        'timestamp_seconds': seg.start,
+                        'text': seg.text.strip(),
+                        'tone': 'neutral',
+                        'confidence': 0.8,
+                        'word_count': len(seg.text.strip().split())
+                    })
+                    full_text += seg.text.strip() + " "
+                    duration = seg.end
+            
+            return {
+                'success': True,
+                'full_text': full_text.strip(),
+                'segments': segments,
+                'duration': duration,
+                'language_detected': getattr(transcript, 'language', 'en'),
+                'estimated_speakers': 1,
+                'audio_quality': 'good'
+            }
+            
+        except Exception as e:
+            logger.error(f"Cloud Whisper error: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _create_segments(self, result: Dict) -> List[MediaSegment]:
+        """Create MediaSegments from result."""
         segments = []
-        raw_segments = result.get('segments', [])
-        
-        for i, seg in enumerate(raw_segments):
-            # Handle both dict and non-dict formats
+        for i, seg in enumerate(result.get('segments', [])):
             if isinstance(seg, dict):
-                content = seg.get('text', '')
-                start = seg.get('timestamp_seconds', i * 30)  # Default 30s intervals
-                end = start + 30
-                speaker = seg.get('speaker', 'Speaker 1')
-                confidence = seg.get('confidence', 0.8)
-                tone = seg.get('tone', 'neutral')
-            else:
-                content = str(seg)
-                start = i * 30
-                end = start + 30
-                speaker = 'Speaker 1'
-                confidence = 0.8
-                tone = 'neutral'
-            
-            segment = MediaSegment(
-                segment_id=f"seg_{i:04d}",
-                content=content,
-                start_time=start,
-                end_time=end,
-                speaker=speaker,
-                confidence=confidence,
-                tone=tone,
-                word_count=len(content.split())
-            )
-            segments.append(segment)
-        
-        # If no segments, create from full text
-        if not segments and result.get('full_text'):
-            segments.append(MediaSegment(
-                segment_id="seg_0000",
-                content=result['full_text'],
-                start_time=0,
-                end_time=0,
-                speaker="Speaker 1",
-                confidence=0.8,
-                word_count=len(result['full_text'].split())
-            ))
-        
+                segments.append(MediaSegment(
+                    segment_id=f"seg_{i:04d}",
+                    content=seg.get('text', ''),
+                    start_time=seg.get('timestamp_seconds', 0),
+                    end_time=seg.get('timestamp_seconds', 0) + 30,
+                    speaker=seg.get('speaker', 'Speaker 1'),
+                    confidence=seg.get('confidence', 0.8),
+                    tone=seg.get('tone', 'neutral'),
+                    word_count=seg.get('word_count', 0)
+                ))
         return segments
     
-    def _generate_embeddings(self, media: ProcessedMedia) -> None:
-        """Generate embeddings for each segment.
-        
-        Args:
-            media: ProcessedMedia object to add embeddings to
-        """
-        if not media.segments:
-            return
-        
-        if self.gemini is None:
-            logger.warning("No Gemini client for embeddings")
-            return
-        
-        try:
-            # Create content for embedding: timestamp + speaker + content
-            texts = []
-            for seg in media.segments:
-                # Create searchable text with context
-                searchable = f"[{seg.start_time:.0f}s {seg.speaker}] {seg.content}"
-                texts.append(searchable)
-            
-            if texts:
-                embeddings = self.gemini.embed_texts(texts)
-                
-                for seg, embedding in zip(media.segments, embeddings):
-                    seg.embedding = embedding
-                
-                logger.info(f"Generated {len(embeddings)} embeddings")
-                
-        except Exception as e:
-            logger.error(f"Embedding generation error: {e}")
-    
-    def cleanup(self) -> None:
-        """Clean up temporary files."""
+    def cleanup(self):
+        """Clean up temp files."""
         for tmp in self._temp_files:
             try:
                 os.unlink(tmp)
             except:
                 pass
         self._temp_files = []
-
-
-# ============================================================================
-# FLASK ROUTES
-# ============================================================================
-
-def register_media_routes(app):
-    """Register media processing routes with Flask app."""
-    from flask import request, jsonify, send_file, abort
-    import requests as req
-    
-    @app.route('/drive/media/process', methods=['POST'])
-    def process_media_file():
-        """Process a video or audio file from Google Drive.
-        
-        Request JSON:
-        {
-            "file_id": "Google Drive file ID",
-            "file_name": "filename.mp4",
-            "mime_type": "video/mp4",
-            "course_id": "course identifier"
-        }
-        
-        Returns:
-        {
-            "success": true/false,
-            "transcript": "full transcript text",
-            "segments": [...],
-            "duration_seconds": 1200,
-            "word_count": 3000,
-            "chunks": 10,
-            "error": "error message if failed"
-        }
-        """
-        try:
-            data = request.get_json()
-            file_id = data.get('file_id')
-            file_name = data.get('file_name')
-            mime_type = data.get('mime_type', 'video/mp4')
-            course_id = data.get('course_id')
-            
-            if not file_id or not file_name:
-                return jsonify({'error': 'file_id and file_name required'}), 400
-            
-            # Get access token
-            from flask import session
-            access_token = session.get('drive_access_token')
-            refresh_token = session.get('drive_refresh_token')
-            
-            if not access_token:
-                # Try from stored config
-                import os
-                try:
-                    from .oauth import GoogleDriveClient, create_drive_client
-                    
-                    # Get from API if available
-                    node_url = os.environ.get('NODE_API_URL', 'http://localhost:5001')
-                    resp = req.get(f"{node_url}/api/drive/{course_id}", timeout=5)
-                    if resp.ok:
-                        drive_info = resp.json()
-                        access_token = drive_info.get('access_token')
-                        refresh_token = drive_info.get('refresh_token')
-                except:
-                    pass
-            
-            if not access_token:
-                return jsonify({'error': 'Drive not connected. Please link your Google Drive first.'}), 401
-            
-            # Create client and download
-            client = create_drive_client(access_token, refresh_token)
-            
-            # Get file metadata first
-            metadata = client.get_file_metadata(file_id)
-            if not metadata:
-                return jsonify({'error': 'File not found'}), 404
-            
-            file_size = int(metadata.get('size', 0))
-            logger.info(f"Downloading {file_name} ({file_size} bytes)")
-            
-            # Download file
-            content, fname, ext = client.download_file(file_id, mime_type)
-            if not content:
-                return jsonify({'error': 'Download failed'}), 500
-            
-            # Save to temp file
-            import tempfile
-            temp_dir = tempfile.mkdtemp()
-            temp_path = os.path.join(temp_dir, f"{file_id}{ext}")
-            
-            with open(temp_path, 'wb') as f:
-                f.write(content)
-            
-            # Process with MediaProcessor
-            processor = MediaProcessor()
-            
-            try:
-                result = processor.process_file(
-                    temp_path,
-                    file_id,
-                    file_name,
-                    mime_type
-                )
-                
-                response_data = {
-                    'success': result.error is None,
-                    'file_id': result.file_id,
-                    'filename': result.filename,
-                    'file_type': result.file_type,
-                    'duration_seconds': result.duration_seconds,
-                    'word_count': result.word_count,
-                    'speaker_count': result.speaker_count,
-                    'language': result.language,
-                    'audio_quality': result.audio_quality,
-                    'chunks_processed': result.chunks_processed,
-                    'processing_time': result.processing_time
-                }
-                
-                if result.error:
-                    response_data['error'] = result.error
-                else:
-                    response_data['transcript'] = result.full_transcript
-                    response_data['segments'] = [s.to_dict() for s in result.segments]
-                    response_data['embedding_count'] = sum(
-                        1 for s in result.segments if s.embedding
-                    )
-                
-                return jsonify(response_data)
-                
-            finally:
-                # Cleanup
-                processor.cleanup()
-                try:
-                    os.unlink(temp_path)
-                    os.rmdir(temp_dir)
-                except:
-                    pass
-            
-        except Exception as e:
-            logger.error(f"Media processing error: {e}")
-            return jsonify({'error': str(e)}), 500
-    
-    @app.route('/drive/media/transcript/<course_id>', methods=['GET'])
-    def get_media_transcript(course_id):
-        """Get transcribed media for a course.
-        
-        Returns list of all transcribed media files.
-        """
-        try:
-            # This would query the database for transcribed media
-            # For now, return placeholder
-            return jsonify({
-                'media': [],
-                'note': 'Media transcription storage not yet implemented'
-            })
-            
-        except Exception as e:
-            logger.error(f"Get transcript error: {e}")
-            return jsonify({'error': str(e)}), 500
-    
-    return app

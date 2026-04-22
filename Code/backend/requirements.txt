@@ -25,13 +25,23 @@ pymupdf>=1.23.0
 # Embeddings (Must Have)
 sentence-transformers>=2.2.0
 
-# Optional: Google Gemini Embedding 2 (Multimodal, Free Tier Available!)
-# Install with: pip install google-generativeai
+# Google Gemini (For document embeddings and AI features)
 # Get free API key: https://aistudio.google.com/app/apikey
-# google-generativeai>=0.8.0
+google-generativeai>=0.8.0
 
-# Optional: Audio Transcription
-# openai-whisper>=20231117
+# OpenAI Whisper (For video/audio transcription - cloud based)
+# Get API key: https://platform.openai.com/api-keys
+# Cost: ~$0.006 per minute of audio
+openai>=1.0.0
+
+# Local Whisper - FREE, NO API KEY NEEDED!
+# Runs transcription locally on your computer
+# Options: tiny, base, small, medium, large-v2
+faster-whisper>=1.0.0
+
+# Video/Audio Processing (For extracting audio from video files)
+pydub>=0.25.1
+moviepy>=1.0.3
 
 # Utilities
 python-magic>=0.4.27

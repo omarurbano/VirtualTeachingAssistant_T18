@@ -3283,6 +3283,46 @@ def initialize():
         if not app_state.is_initialized:
             app_state.initialize()
         
+        # Load vector chunks from database for persistence
+        try:
+            import requests
+            
+            chunks_resp = requests.get(f"{NODE_API_URL}/api/vector-chunks", timeout=10)
+            if chunks_resp.ok:
+                all_chunks = chunks_resp.json()
+                if all_chunks and isinstance(all_chunks, list) and len(all_chunks) > 0:
+                    logger.info(f"Loading {len(all_chunks)} chunks from database")
+                    
+                    # Convert to simple documents
+                    class SimpleDoc:
+                        def __init__(self, page_content, metadata):
+                            self.page_content = page_content
+                            self.metadata = metadata
+                    
+                    docs = []
+                    metadatas = []
+                    for chunk in all_chunks:
+                        try:
+                            text = chunk.get('text', '')
+                            metadata = chunk.get('metadata', {}) or {}
+                            metadata['file_id'] = chunk.get('file_id')
+                            metadata['file_name'] = chunk.get('file_name')
+                            
+                            if text and len(text) > 10:
+                                docs.append(SimpleDoc(page_content=text, metadata=metadata))
+                                metadatas.append(metadata)
+                        except Exception as e:
+                            logger.warning(f"Could not load chunk: {e}")
+                    
+                    if docs:
+                        # Get embeddings
+                        texts = [d.page_content for d in docs]
+                        embeddings = app_state.embedding_manager.embed_documents(texts)
+                        app_state.vector_store.add_documents(docs, embeddings, metadatas)
+                        logger.info(f"Added {len(docs)} documents to vector store")
+        except Exception as load_err:
+            logger.warning(f"Could not load from database: {load_err}")
+        
         # Check which embedding provider is being used
         embedding_provider = os.environ.get('EMBEDDING_PROVIDER', '').lower()
         is_gemini = embedding_provider == 'gemini' and os.environ.get('GOOGLE_API_KEY')
@@ -4392,12 +4432,20 @@ def list_drive_files(course_id):
             files_data = files_response.json()
             files = []
             for f in files_data.get('files', []):
-                # Only include supported file types
-                if f.get('mimeType') in ['application/pdf', 'application/vnd.google-apps.document', 'application/vnd.google-apps.presentation']:
+                mime_type = f.get('mimeType', '')
+                # Include PDFs, Google Docs, Videos, and Audio
+                supported_types = [
+                    'application/pdf', 
+                    'application/vnd.google-apps.document', 
+                    'application/vnd.google-apps.presentation',
+                    'video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo',
+                    'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-m4a', 'audio/ogg'
+                ]
+                if any(mime_type.startswith(t) or mime_type in supported_types for t in ['application/pdf', 'video/', 'audio/']):
                     files.append({
                         'id': f.get('id'),
                         'name': f.get('name'),
-                        'type': f.get('mimeType'),
+                        'type': mime_type,
                         'size': f.get('size', '0'),
                         'url': f.get('webViewLink')
                     })
@@ -4424,9 +4472,19 @@ def sync_drive_files():
     """Sync selected files from Google Drive."""
     try:
         data = request.get_json()
-        file_urls = data.get('file_urls', [])  # These are file IDs
+        
+        # Support both old format (file_urls, file_names) and new format (files array)
+        files_data = data.get('files', [])
+        file_urls = data.get('file_urls', [])
         file_names = data.get('file_names', [])
         course_id = data.get('course_id')
+        
+        # If using new format with files array
+        mime_types = []
+        if files_data and not file_urls:
+            file_urls = [f.get('id') for f in files_data]
+            file_names = [f.get('name') for f in files_data]
+            mime_types = [f.get('mimeType') for f in files_data]
         
         if not file_urls or not course_id:
             return jsonify({'error': 'file_urls and course_id required'}), 400
@@ -4453,6 +4511,7 @@ def sync_drive_files():
         
         for i, file_id in enumerate(file_urls):
             file_name = file_names[i] if i < len(file_names) else f'file_{i}'
+            mime_type = mime_types[i] if i < len(mime_types) else 'application/pdf'
             
             try:
                 # Call the embed endpoint for each file
@@ -4461,6 +4520,7 @@ def sync_drive_files():
                     json={
                         'file_id': file_id,
                         'file_name': file_name,
+                        'mime_type': mime_type,
                         'course_id': course_id
                     },
                     timeout=120
@@ -4553,9 +4613,16 @@ def embed_drive_file():
             
             content = response.content
             
-            # Determine file extension
-            ext = '.pdf'
-            if mime_type == 'application/pdf':
+            # Determine file extension and processing method
+            is_video = mime_type.startswith('video/')
+            is_audio = mime_type.startswith('audio/')
+            is_pdf = mime_type == 'application/pdf'
+            
+            if is_video:
+                ext = '.mp4'
+            elif is_audio:
+                ext = '.m4a'
+            elif mime_type == 'application/pdf':
                 ext = '.pdf'
             elif 'document' in mime_type:
                 ext = '.docx'
@@ -4585,7 +4652,90 @@ def embed_drive_file():
             # Generate file ID
             file_id_new = generate_file_id()
             
-            # Process the uploaded file
+            # Handle media files (video/audio) separately
+            if is_video or is_audio:
+                # Call media transcription endpoint
+                from gdrive.media_processor import MediaProcessor
+                processor = MediaProcessor()
+                result = processor.process_file(file_path, file_id, file_name, mime_type)
+                
+                if result.error:
+                    # Clean up temp files
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                    if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                        import shutil
+                        shutil.rmtree(temp_dir)
+                    return jsonify({'error': result.error}), 500
+                
+                # Store in app_state
+                if not hasattr(app_state, 'media_transcripts'):
+                    app_state.media_transcripts = {}
+                app_state.media_transcripts[file_id_new] = {
+                    'file_id': file_id,
+                    'course_id': course_id,
+                    'filename': file_name,
+                    'file_type': result.file_type,
+                    'transcript': result.full_transcript,
+                    'segments': [s.to_dict() for s in result.segments],
+                    'language': result.language,
+                    'speaker_count': result.speaker_count,
+                    'word_count': result.word_count,
+                    'source': 'google_drive'
+                }
+                
+                # Save transcript chunks to database for persistence
+                try:
+                    transcript_chunks = []
+                    for idx, seg in enumerate(result.segments):
+                        text = seg.content if seg.content else ''
+                        if text and len(text) > 10:
+                            transcript_chunks.append({
+                                'course_id': course_id,
+                                'file_id': file_id_new,
+                                'file_name': file_name,
+                                'text': text,
+                                'chunk_index': idx,
+                                'embedding': seg.embedding if seg.embedding else None,
+                                'metadata': {
+                                    'course_id': course_id,
+                                    'source_type': 'media_transcript',
+                                    'timestamp_start': seg.start_time,
+                                    'timestamp_end': seg.end_time,
+                                    'speaker': seg.speaker
+                                }
+                            })
+                    if transcript_chunks:
+                        requests.post(f"{NODE_API_URL}/api/vector-chunks", json={'chunks': transcript_chunks}, timeout=30)
+                except Exception as save_err:
+                    logger.warning(f"Could not save transcript chunks: {save_err}")
+                
+                # Record in Supabase
+                requests.post(f"{NODE_API_URL}/api/materials", json={
+                    'course_id': course_id,
+                    'source_type': 'media_transcript',
+                    'file_name': file_name,
+                    'chunks_count': len(result.segments),
+                    'file_id': file_id_new
+                }, timeout=5)
+                
+                # Clean up temp files
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                    import shutil
+                    shutil.rmtree(temp_dir)
+                
+                return jsonify({
+                    'success': True,
+                    'file_id': file_id_new,
+                    'filename': file_name,
+                    'transcript': result.full_transcript[:50000],
+                    'segments': [s.to_dict() for s in result.segments[:50]],
+                    'message': f'Transcribed {file_name}'
+                })
+            
+            # Process PDF/document as usual
             result = process_uploaded_file(file_path, file_id_new, course_id)
             
             # Add course_id to the file metadata for course scoping
@@ -4730,6 +4880,7 @@ def embed_media_file():
         
         # Get access token from session or database
         access_token = session.get('drive_access_token')
+        refresh_token = None
         
         if not access_token:
             try:
@@ -4737,11 +4888,29 @@ def embed_media_file():
                 if response.ok and response.json():
                     drive_info = response.json()
                     access_token = drive_info.get('access_token')
+                    refresh_token = drive_info.get('refresh_token')
             except Exception as e:
                 logger.warning(f"Could not fetch tokens from Supabase: {e}")
         
         if not access_token:
             return jsonify({'error': 'Google Drive not connected. Please link your Drive first.'}), 401
+        
+        # Try to refresh token if needed
+        try:
+            url = 'https://oauth2.googleapis.com/token'
+            data = {
+                'client_id': os.environ.get('GOOGLE_CLIENT_ID'),
+                'client_secret': os.environ.get('GOOGLE_CLIENT_SECRET'),
+                'refresh_token': refresh_token,
+                'grant_type': 'refresh_token'
+            }
+            refresh_resp = requests.post(url, data=data, timeout=10)
+            if refresh_resp.ok:
+                token_data = refresh_resp.json()
+                access_token = token_data.get('access_token')
+                logger.info("Google Drive token refreshed successfully")
+        except Exception as refresh_err:
+            logger.warning(f"Could not refresh token: {refresh_err}")
         
         logger.info(f"Downloading media file: {file_name} ({mime_type})")
         
@@ -4863,6 +5032,42 @@ def embed_media_file():
                 )
             except Exception as db_error:
                 logger.warning(f"Could not save to database: {db_error}")
+            
+            # Save transcript segments to vector_chunks for persistent search
+            try:
+                transcript_chunks = []
+                for idx, seg in enumerate(result.segments):
+                    text = seg.content if seg.content else ''
+                    if text and len(text) > 10:
+                        transcript_chunks.append({
+                            'course_id': course_id,
+                            'file_id': file_id_new,
+                            'file_name': file_name,
+                            'text': text,
+                            'chunk_index': idx,
+                            'embedding': seg.embedding if seg.embedding else None,
+                            'metadata': {
+                                'course_id': course_id,
+                                'source_type': 'media_transcript',
+                                'timestamp_start': seg.start_time,
+                                'timestamp_end': seg.end_time,
+                                'speaker': seg.speaker,
+                                'language': result.language
+                            }
+                        })
+                
+                if transcript_chunks:
+                    save_chunks_resp = requests.post(
+                        f"{NODE_API_URL}/api/vector-chunks",
+                        json={'chunks': transcript_chunks},
+                        timeout=30
+                    )
+                    if save_chunks_resp.ok:
+                        logger.info(f"Saved {len(transcript_chunks)} transcript chunks to database")
+                    else:
+                        logger.warning(f"Could not save transcript chunks: {save_chunks_resp.text}")
+            except Exception as save_chunks_err:
+                logger.warning(f"Could not save transcript chunks: {save_chunks_err}")
             
             # Clean up temp file
             cleanup_temp(file_path, temp_dir)
