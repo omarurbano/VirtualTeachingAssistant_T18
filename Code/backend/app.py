@@ -3312,32 +3312,29 @@ def health_check():
 
 @app.route('/media/play', methods=['GET'])
 def play_media():
-    """Play video/audio at specific timestamp."""
-    try:
-        file_id = request.args.get('file')
-        timestamp = request.args.get('t', '0')
-        
-        # Find the media file info
-        media_info = None
-        if hasattr(app_state, 'media_transcripts'):
-            for m in app_state.media_transcripts.values():
-                if m.get('file_id') == file_id:
-                    media_info = m
-                    break
-        
-        if not media_info:
-            return jsonify({'error': 'Media not found'}), 404
-        
-        return jsonify({
-            'filename': media_info.get('filename'),
-            'file_type': media_info.get('file_type'),
-            'transcript': media_info.get('transcript', ''),
-            'segments': media_info.get('segments', []),
-            'timestamp': timestamp,
-            'message': f'Playing at {timestamp} seconds'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    """Redirect to Google Drive media player at specific timestamp."""
+    file_id = request.args.get('file')
+    timestamp = request.args.get('t', '0')
+
+    logger.info(f"Media play request: file_id={file_id}, timestamp={timestamp}")
+
+    if not file_id:
+        return jsonify({'error': 'File ID required'}), 400
+
+    # Fix incorrect file_id from database
+    if file_id == 'de9495db83aa':
+        file_id = '1OyDAcob06dy8pkLw9DKxIlgWHQUixiVf'
+        logger.info(f"Corrected file_id to: {file_id}")
+
+    # Construct Google Drive URL with timestamp
+    drive_url = f"https://drive.google.com/file/d/{file_id}/view"
+    if timestamp and timestamp != '0':
+        drive_url += f"?t={int(float(timestamp))}"
+
+    logger.info(f"Redirecting to: {drive_url}")
+
+    # Redirect to Google Drive
+    return redirect(drive_url)
 
 
 @app.route('/pdf/view', methods=['GET'])
@@ -3732,8 +3729,30 @@ def query():
                             try:
                                 text = chunk.get('text', '')
                                 metadata = chunk.get('metadata', {}) or {}
-                                metadata['file_id'] = chunk.get('file_id')
+                                metadata['file_id'] = metadata.get('file_id', chunk.get('file_id'))
                                 metadata['file_name'] = chunk.get('file_name')
+
+                                # For media transcripts, ensure file_id is the Google Drive ID
+                                if metadata.get('source_type') == 'media_transcript':
+                                    try:
+                                        # Look up the Google Drive file_id from course_materials
+                                        materials_resp = requests.get(f"{NODE_API_URL}/api/materials", timeout=5)
+                                        if materials_resp.ok:
+                                            materials = materials_resp.json()
+                                            file_name = chunk.get('file_name', '')
+                                            print(f"DEBUG: Looking for file_name={file_name} in materials")
+                                            for material in materials:
+                                                print(f"DEBUG: Checking material {material.get('file_name')} type {material.get('source_type')}")
+                                                if material.get('file_name', '').strip().lower() == file_name.strip().lower() and material.get('source_type') == 'media_transcript':
+                                                    old_id = metadata['file_id']
+                                                    metadata['file_id'] = material.get('file_id')
+                                                    print(f"DEBUG: Updated file_id from {old_id} to {metadata['file_id']}")
+                                                    break
+                                        else:
+                                            print(f"DEBUG: Failed to get materials: {materials_resp.status_code}")
+                                    except Exception as lookup_err:
+                                        print(f"DEBUG: Exception in lookup: {lookup_err}")
+                                        logger.warning(f"Could not look up Google Drive ID for {file_name}: {lookup_err}")
 
                                 if text and len(text) > 10:
                                     docs.append(SimpleDoc(page_content=text, metadata=metadata))
@@ -4868,28 +4887,15 @@ def embed_drive_file():
                     logger.warning(f"Could not save transcript chunks: {save_err}")
                 
                 # Record in Supabase
+                # Ensure we store the correct Google Drive file ID
+                logger.info(f"Saving media material: file_name={file_name}, google_drive_file_id={file_id}, generated_id={file_id_new}")
+
                 requests.post(f"{NODE_API_URL}/api/materials", json={
                     'course_id': course_id,
                     'source_type': 'media_transcript',
                     'file_name': file_name,
-                    'chunks_count': len(result.segments),
-                    'file_id': file_id_new
-                }, timeout=5)
-                
-                # Clean up temp files
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                if 'temp_dir' in locals() and os.path.exists(temp_dir):
-                    import shutil
-                    shutil.rmtree(temp_dir)
-                
-                return jsonify({
-                    'success': True,
-                    'file_id': file_id_new,
-                    'filename': file_name,
-                    'transcript': result.full_transcript[:50000],
-                    'segments': [s.to_dict() for s in result.segments[:50]],
-                    'message': f'Transcribed {file_name}'
+                    'chunks_count': len(transcript_chunks),
+                    'file_id': file_id  # Google Drive file ID
                 })
             
             # Process PDF/document as usual

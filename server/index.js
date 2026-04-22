@@ -432,6 +432,32 @@ app.get('/api/vector-chunks', async (req, res) => {
 
 
 // ============================================
+// DEBUG ROUTES
+// ============================================
+
+// Debug: Get all materials
+app.get('/debug/materials', async (req, res) => {
+    try {
+        const { data, error } = await supabase.from("course_materials").select("*");
+        if (error) return res.status(500).json({ error: error.message });
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Debug: Get all vector chunks
+app.get('/debug/vector-chunks', async (req, res) => {
+    try {
+        const { data, error } = await supabase.from("vector_chunks").select("*");
+        if (error) return res.status(500).json({ error: error.message });
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================================
 // START SERVER
 // ============================================
 
