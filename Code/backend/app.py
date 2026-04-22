@@ -1770,6 +1770,8 @@ def process_image_file(file_path: str, file_id: str) -> Dict[str, Any]:
 def retrieve_and_answer(query: str, max_results: int = 5, course_id: str = None) -> Dict[str, Any]:
     """Retrieve relevant documents and generate answer with citations using multimodal re-ranking.
     
+    Now also searches transcribed media (video/audio) from Google Drive.
+    
     Args:
         query: The user's question
         max_results: Maximum number of documents to return
@@ -1779,10 +1781,61 @@ def retrieve_and_answer(query: str, max_results: int = 5, course_id: str = None)
         'success': False,
         'answer': '',
         'citations': [],
-        'error': None
+        'error': None,
+        'sources': []  # Track source types (documents, media_transcript)
     }
     
     try:
+        # =====================================================
+        # SEARCH MEDIA TRANSCRIPTS (Video/Audio from Google Drive)
+        # =====================================================
+        media_results = []
+        media_citations = []
+        
+        # Check if we have any transcribed media for this course
+        if hasattr(app_state, 'media_transcripts') and app_state.media_transcripts:
+            # Filter to course
+            course_media = [
+                m for m in app_state.media_transcripts.values()
+                if m.get('course_id') == course_id or course_id is None
+            ]
+            
+            if course_media:
+                logger.info(f"Searching {len(course_media)} media transcripts for course {course_id}")
+                
+                # Simple text search in transcripts
+                query_lower = query.lower()
+                
+                for media in course_media:
+                    transcript = media.get('transcript', '')
+                    segments = media.get('segments', [])
+                    filename = media.get('filename', 'Unknown')
+                    
+                    # Search in transcript text
+                    if query_lower in transcript.lower():
+                        # Find relevant segments
+                        for seg in segments:
+                            seg_content = seg.get('content', '').lower()
+                            if query_lower in seg_content:
+                                # Create citation for this segment
+                                media_citations.append({
+                                    'source_file': filename,
+                                    'content': seg.get('content', ''),
+                                    'page_number': None,  # No page for media
+                                    'timestamp_start': seg.get('start_time', 0),
+                                    'timestamp_end': seg.get('end_time', 0),
+                                    'speaker': seg.get('speaker', 'Unknown'),
+                                    'source_type': 'media_transcript',
+                                    'media_type': media.get('file_type', 'audio'),
+                                    'confidence': seg.get('confidence', 0.8)
+                                })
+                                
+                                # Keep track that we found media results
+                                if filename not in result['sources']:
+                                    result['sources'].append(filename)
+                
+                logger.info(f"Media transcript search: found {len(media_citations)} relevant segments")
+        
         # Embed the query
         query_embedding = app_state.embedding_manager.embed_query(query)
         
@@ -1977,6 +2030,36 @@ def retrieve_and_answer(query: str, max_results: int = 5, course_id: str = None)
                     citation['audio_quality'] = metadata['audio_quality']
             
             citations.append(citation)
+        
+        # =====================================================
+        # INCLUDE MEDIA TRANSCRIPT CITATIONS
+        # =====================================================
+        # Add media transcript citations (from video/audio transcription)
+        if media_citations:
+            logger.info(f"Adding {len(media_citations)} media transcript citations")
+            
+            # Add media citations to the main citations list
+            for media_cit in media_citations:
+                citation = {
+                    'source_file': media_cit.get('source_file', 'Unknown Media'),
+                    'page_number': None,  # No page for media
+                    'timestamp_start': media_cit.get('timestamp_start', 0),
+                    'timestamp_end': media_cit.get('timestamp_end', 0),
+                    'verbatim': media_cit.get('content', '')[:300],
+                    'full_text': media_cit.get('content', ''),
+                    'source_type': 'media_transcript',
+                    'speaker': media_cit.get('speaker', 'Unknown'),
+                    'media_type': media_cit.get('media_type', 'audio'),
+                    'location': f"Timestamp {media_cit.get('timestamp_start', 0):.0f}s - {media_cit.get('timestamp_end', 0):.0f}s",
+                    'confidence': media_cit.get('confidence', 0.8),
+                    'similarity_score': 0.9,  # Media matches get high score
+                }
+                citations.append(citation)
+            
+            # Add note about media sources to answer
+            if media_citations:
+                result['has_media_sources'] = True
+                result['media_file_count'] = len(result.get('sources', []))
         
         # Build answer text (citations are sent separately for frontend rendering)
         answer_text = generated_answer.answer_text
@@ -4575,6 +4658,327 @@ def embed_drive_file():
         
     except Exception as e:
         logger.error(f"Embed error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# VIDEO/AUDIO MEDIA PROCESSING
+# ============================================================================
+
+@app.route('/drive/media/embed', methods=['POST'])
+def embed_media_file():
+    """Download video/audio from Google Drive and transcribe it.
+    
+    This endpoint handles video (MP4, MOV, etc.) and audio (MP3, WAV, etc.) files.
+    The file is transcribed using Gemini API and stored as searchable transcript.
+    
+    Request JSON:
+    {
+        "file_id": "Google Drive file ID",
+        "file_name": "lecture1.mp4",
+        "mime_type": "video/mp4",
+        "course_id": "cpts451"
+    }
+    
+    Returns:
+    {
+        "success": true,
+        "file_id": "drive_file_id",
+        "filename": "lecture1.mp4",
+        "file_type": "video",
+        "duration_seconds": 1200,
+        "word_count": 3500,
+        "speaker_count": 2,
+        "language": "english",
+        "audio_quality": "good",
+        "transcript": "full transcript text...",
+        "segments": [
+            {
+                "segment_id": "seg_0000",
+                "content": "Hello class...",
+                "start_time": 0,
+                "end_time": 30,
+                "speaker": "Speaker 1",
+                "confidence": 0.92,
+                "tone": "neutral"
+            },
+            ...
+        ],
+        "chunks_processed": 1,
+        "embedding_count": 12
+    }
+    """
+    import tempfile
+    import requests
+    
+    try:
+        data = request.get_json()
+        file_id = data.get('file_id')
+        file_name = data.get('file_name', 'media')
+        mime_type = data.get('mime_type', 'video/mp4')
+        course_id = data.get('course_id')
+        
+        if not file_id or not course_id:
+            return jsonify({'error': 'file_id and course_id required'}), 400
+        
+        # Check if this is a media file
+        is_video = mime_type.startswith('video/')
+        is_audio = mime_type.startswith('audio/')
+        
+        if not is_video and not is_audio:
+            return jsonify({'error': 'Not a video or audio file'}), 400
+        
+        # Get access token from session or database
+        access_token = session.get('drive_access_token')
+        
+        if not access_token:
+            try:
+                response = req.get(f"{NODE_API_URL}/api/drive/{course_id}", timeout=5)
+                if response.ok and response.json():
+                    drive_info = response.json()
+                    access_token = drive_info.get('access_token')
+            except Exception as e:
+                logger.warning(f"Could not fetch tokens from Supabase: {e}")
+        
+        if not access_token:
+            return jsonify({'error': 'Google Drive not connected. Please link your Drive first.'}), 401
+        
+        logger.info(f"Downloading media file: {file_name} ({mime_type})")
+        
+        # Download the file
+        try:
+            from io import BytesIO
+            
+            url = f'https://www.googleapis.com/drive/v3/files/{file_id}'
+            params = {'alt': 'media'}
+            headers = {'Authorization': f'Bearer {access_token}'}
+            
+            response = requests.get(url, params=params, headers=headers, timeout=120)
+            
+            if not response.ok:
+                return jsonify({'error': f'Download failed: {response.status_code}'}), 500
+            
+            content = response.content
+            
+            # Determine file extension
+            ext_map = {
+                'video/mp4': '.mp4',
+                'video/quicktime': '.mov',
+                'video/webm': '.webm',
+                'audio/mpeg': '.mp3',
+                'audio/mp4': '.m4a',
+                'audio/wav': '.wav',
+                'audio/ogg': '.ogg',
+            }
+            ext = ext_map.get(mime_type, '.mp4' if is_video else '.mp3')
+            
+            # Save to temp file
+            temp_dir = tempfile.mkdtemp()
+            file_path = os.path.join(temp_dir, f"drive_{file_id}{ext}")
+            
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            
+            logger.info(f"Media file saved: {len(content) / (1024*1024):.1f} MB to {file_path}")
+            
+        except Exception as download_error:
+            logger.error(f"Download error: {download_error}")
+            return jsonify({'error': f'Download failed: {str(download_error)}'}), 500
+        
+        # Process media file
+        try:
+            from gdrive.media_processor import MediaProcessor
+            
+            processor = MediaProcessor()
+            
+            result = processor.process_file(
+                file_path,
+                file_id,
+                file_name,
+                mime_type
+            )
+            
+            if result.error:
+                cleanup_temp(file_path, temp_dir)
+                return jsonify({'error': result.error}), 500
+            
+            # Store the transcript for the course
+            # Generate a unique ID for the transcribed file
+            file_id_new = generate_file_id()
+            
+            # Store in app_state for in-memory retrieval
+            if not hasattr(app_state, 'media_transcripts'):
+                app_state.media_transcripts = {}
+            
+            app_state.media_transcripts[file_id_new] = {
+                'file_id': file_id,
+                'course_id': course_id,
+                'filename': file_name,
+                'file_type': result.file_type,
+                'mime_type': mime_type,
+                'duration': result.duration_seconds,
+                'transcript': result.full_transcript,
+                'segments': [s.to_dict() for s in result.segments],
+                'language': result.language,
+                'speaker_count': result.speaker_count,
+                'audio_quality': result.audio_quality,
+                'word_count': result.word_count,
+                'embeddings': [s.embedding for s in result.segments if s.embedding],
+                'source': 'google_drive',
+                'embedded_at': datetime.now().isoformat()
+            }
+            
+            # Store chunks for semantic search
+            if not hasattr(app_state, 'uploaded_files'):
+                app_state.uploaded_files = {}
+            
+            app_state.uploaded_files[file_id_new] = {
+                'course_id': course_id,
+                'file_name': file_name,
+                'source_type': 'media_transcript',
+                'chunks_count': len(result.segments),
+                'embedded_at': datetime.now().isoformat(),
+                'source': 'google_drive'
+            }
+            
+            # Save to database
+            try:
+                requests.post(
+                    f"{NODE_API_URL}/api/materials",
+                    json={
+                        'course_id': course_id,
+                        'source_type': 'media_transcript',
+                        'file_name': file_name,
+                        'chunks_count': len(result.segments),
+                        'file_id': file_id_new,
+                        'metadata': {
+                            'duration': result.duration_seconds,
+                            'speaker_count': result.speaker_count,
+                            'language': result.language,
+                            'word_count': result.word_count,
+                            'media_type': result.file_type
+                        }
+                    },
+                    timeout=5
+                )
+            except Exception as db_error:
+                logger.warning(f"Could not save to database: {db_error}")
+            
+            # Clean up temp file
+            cleanup_temp(file_path, temp_dir)
+            
+            return jsonify({
+                'success': True,
+                'file_id': file_id_new,
+                'drive_file_id': file_id,
+                'filename': file_name,
+                'file_type': result.file_type,
+                'duration_seconds': result.duration_seconds,
+                'word_count': result.word_count,
+                'speaker_count': result.speaker_count,
+                'language': result.language,
+                'audio_quality': result.audio_quality,
+                'transcript': result.full_transcript[:50000] if result.full_transcript else '',  # Limit response size
+                'segments': [s.to_dict() for s in result.segments[:50]],  # Limit segments in response
+                'chunks_processed': result.chunks_processed,
+                'embedding_count': len(result.segments),
+                'message': f'Successfully transcribed {file_name}'
+            })
+            
+        except Exception as process_error:
+            logger.error(f"Media processing error: {process_error}")
+            cleanup_temp(file_path, temp_dir)
+            return jsonify({'error': f'Transcription failed: {str(process_error)}'}), 500
+        
+    except Exception as e:
+        logger.error(f"Media embed error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def cleanup_temp(file_path: str, temp_dir: str) -> None:
+    """Clean up temporary file and directory.
+    
+    Args:
+        file_path: Path to temp file
+        temp_dir: Path to temp directory
+    """
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Cleaned up temp file: {file_path}")
+    except Exception as e:
+        logger.warning(f"Failed to clean temp file: {e}")
+    
+    try:
+        if temp_dir and os.path.exists(temp_dir):
+            import shutil
+            shutil.rmtree(temp_dir)
+            logger.info(f"Cleaned up temp directory: {temp_dir}")
+    except Exception as e:
+        logger.warning(f"Failed to clean temp directory: {e}")
+
+
+@app.route('/drive/media/query', methods=['POST'])
+def query_media_transcript():
+    """Query transcribed media files for a course.
+    
+    Request JSON:
+    {
+        "query": "question about the lecture",
+        "course_id": "cpts451"
+    }
+    
+    Returns relevant transcript segments with citations.
+    """
+    try:
+        data = request.get_json()
+        query = data.get('query', '')
+        course_id = data.get('course_id')
+        
+        if not query or not course_id:
+            return jsonify({'error': 'query and course_id required'}), 400
+        
+        # Get media transcripts for this course
+        if not hasattr(app_state, 'media_transcripts'):
+            return jsonify({'results': [], 'message': 'No media transcripts found'})
+        
+        course_media = [
+            m for m in app_state.media_transcripts.values()
+            if m.get('course_id') == course_id
+        ]
+        
+        if not course_media:
+            return jsonify({'results': [], 'message': 'No media transcripts for this course'})
+        
+        # For now, do simple substring matching
+        # In production, you'd use embeddings for semantic search
+        results = []
+        for media in course_media:
+            transcript = media.get('transcript', '')
+            segments = media.get('segments', [])
+            
+            # Find relevant segments
+            query_lower = query.lower()
+            for seg in segments:
+                content = seg.get('content', '').lower()
+                if query_lower in content:
+                    results.append({
+                        'filename': media.get('filename'),
+                        'segment': seg.get('content'),
+                        'start_time': seg.get('start_time'),
+                        'end_time': seg.get('end_time'),
+                        'speaker': seg.get('speaker'),
+                        'confidence': seg.get('confidence'),
+                        'relevance': 'high'
+                    })
+        
+        return jsonify({
+            'results': results[:10],  # Limit results
+            'total_found': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Query media error: {e}")
         return jsonify({'error': str(e)}), 500
 
 

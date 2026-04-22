@@ -46,7 +46,20 @@ class DriveManager {
             
             if (response.ok) {
                 const data = await response.json();
-                this.files = data.files || [];
+                // Handle both old format (files array) and new format (categorized)
+                if (data.files) {
+                    // Old format
+                    this.files = data.files || [];
+                } else if (data.all) {
+                    // New format with categorization
+                    this.files = data.all || [];
+                    this.categorized = {
+                        documents: data.documents || [],
+                        videos: data.videos || [],
+                        audio: data.audio || []
+                    };
+                    this.counts = data.counts || { documents: 0, videos: 0, audio: 0, total: 0 };
+                }
                 this.renderFileList();
             } else {
                 const data = await response.json();
@@ -85,24 +98,39 @@ class DriveManager {
         
         for (const file of selected) {
             try {
-                document.getElementById('driveStatus').textContent = 
-                    `Embedding ${file.name}...`;
+                const mimeType = file.mimeType || file.type;
+                const isVideo = mimeType.startsWith('video/');
+                const isAudio = mimeType.startsWith('audio/');
+                const isMediaFile = isVideo || isAudio;
                 
-                const response = await fetch(`/drive/embed`, {
+                // Choose endpoint based on file type
+                const endpoint = isMediaFile ? '/drive/media/embed' : '/drive/embed';
+                const statusText = isMediaFile 
+                    ? `Transcribing ${file.name}...` 
+                    : `Embedding ${file.name}...`;
+                
+                document.getElementById('driveStatus').textContent = statusText;
+                
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         file_id: file.id,
                         file_name: file.name,
-                        mime_type: file.mimeType,
+                        mime_type: mimeType,
                         course_id: this.courseId
                     })
                 });
                 
                 const data = await response.json();
+                
                 results.push({
                     name: file.name,
                     success: response.ok,
+                    fileType: isMediaFile ? (isVideo ? 'video' : 'audio') : 'document',
+                    duration: data.duration_seconds || null,
+                    wordCount: data.word_count || null,
+                    transcript: data.transcript || null,
                     error: data.error
                 });
             } catch (err) {
@@ -115,6 +143,19 @@ class DriveManager {
         }
 
         return results;
+    }
+    
+    // Get file type
+    getFileTypeLabel(mimeType) {
+        if (!mimeType) return 'File';
+        
+        if (mimeType.includes('pdf')) return 'PDF';
+        if (mimeType.includes('document')) return 'Doc';
+        if (mimeType.includes('spreadsheet')) return 'Sheet';
+        if (mimeType.includes('presentation')) return 'Slide';
+        if (mimeType.startsWith('video/')) return 'Video';
+        if (mimeType.startsWith('audio/')) return 'Audio';
+        return 'File';
     }
 
     // Render file list in the UI
@@ -141,19 +182,36 @@ class DriveManager {
     }
 
     getFileIcon(mimeType) {
+        if (!mimeType) return '📁';
         if (mimeType.includes('pdf')) return '📄';
         if (mimeType.includes('document')) return '📝';
         if (mimeType.includes('spreadsheet')) return '📊';
         if (mimeType.includes('presentation')) return '📽️';
+        if (mimeType.startsWith('video/')) return '🎬';
+        if (mimeType.startsWith('audio/')) return '🎧';
         return '📁';
     }
 
-    getFileTypeLabel(mimeType) {
-        if (mimeType.includes('pdf')) return 'PDF';
-        if (mimeType.includes('document')) return 'Doc';
-        if (mimeType.includes('spreadsheet')) return 'Sheet';
-        if (mimeType.includes('presentation')) return 'Slide';
-        return 'File';
+    formatDuration(seconds) {
+        if (!seconds) return 'Unknown';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        if (mins >= 60) {
+            const hours = Math.floor(mins / 60);
+            const remainMins = mins % 60;
+            return `${hours}:${remainMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    formatFileSize(bytes) {
+        if (!bytes) return 'Unknown';
+        const mb = bytes / (1024 * 1024);
+        if (mb >= 1) {
+            return `${mb.toFixed(1)} MB`;
+        }
+        const kb = bytes / 1024;
+        return `${kb.toFixed(1)} KB`;
     }
 }
 

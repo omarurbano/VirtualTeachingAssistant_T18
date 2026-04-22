@@ -127,12 +127,18 @@ class GoogleDriveClient:
             'Content-Type': 'application/json',
         }
     
-    def list_folder_files(self, folder_id: str, page_size: int = 100):
-        """List files in a Google Drive folder."""
+    def list_folder_files(self, folder_id: str, page_size: int = 100, include_media: bool = True):
+        """List files in a Google Drive folder.
+        
+        Args:
+            folder_id: Google Drive folder ID
+            page_size: Maximum files to return
+            include_media: If True, include video/audio files (MP4, MP3, etc.)
+        """
         import requests
         
-        # Supported MIME types for documents
-        supported_mimes = [
+        # Supported MIME types for documents (text-based)
+        document_mimes = [
             'application/pdf',
             'application/vnd.google-apps.document',
             'application/vnd.google-apps.spreadsheet',
@@ -141,8 +147,43 @@ class GoogleDriveClient:
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         ]
         
+        # Supported MIME types for video (downloaded directly)
+        video_mimes = [
+            'video/mp4',
+            'video/mpeg',
+            'video/quicktime',
+            'video/webm',
+            'video/x-msvideo',
+            'video/x-ms-wmv',
+            'video/x-flv',
+            'video/3gpp',
+            'video/3gpp2',
+        ]
+        
+        # Supported MIME types for audio (downloaded directly)
+        audio_mimes = [
+            'audio/mpeg',  # MP3
+            'audio/mp4',
+            'audio/wav',
+            'audio/x-wav',
+            'audio/ogg',
+            'audio/webm',
+            'audio/flac',
+            'audio/aac',
+            'audio/midi',
+            'audio/x-midi',
+            'audio/wma',
+            'audio/mp2',
+        ]
+        
+        # Build query based on include_media flag
+        if include_media:
+            all_mimes = document_mimes + video_mimes + audio_mimes
+        else:
+            all_mimes = document_mimes
+        
         query = f"'{folder_id}' in parents and trashed=false"
-        mime_query = ' or '.join([f"mimeType='{m}'" for m in supported_mimes])
+        mime_query = ' or '.join([f"mimeType='{m}'" for m in all_mimes])
         query = f"({query}) and ({mime_query})"
         
         params = {
@@ -161,13 +202,90 @@ class GoogleDriveClient:
             )
             
             if response.ok:
-                return response.json().get('files', [])
+                files = response.json().get('files', [])
+                # Categorize files for frontend display
+                return self._categorize_files(files)
             else:
                 logger.error(f"List files failed: {response.text}")
                 return []
         except Exception as e:
             logger.error(f"List files error: {e}")
             return []
+    
+    def _categorize_files(self, files: list) -> dict:
+        """Categorize files by type for frontend display.
+        
+        Args:
+            files: List of file dicts from Google Drive API
+            
+        Returns:
+            Dict with categorized file lists and metadata
+        """
+        documents = []
+        videos = []
+        audio = []
+        
+        video_mimes = {'video/mp4', 'video/mpeg', 'video/quicktime', 'video/webm', 'video/x-msvideo'}
+        audio_mimes = {'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/ogg'}
+        
+        for f in files:
+            mime = f.get('mimeType', '')
+            file_info = {
+                'id': f.get('id'),
+                'name': f.get('name'),
+                'mimeType': mime,
+                'size': f.get('size'),
+                'modifiedTime': f.get('modifiedTime'),
+                'iconLink': f.get('iconLink'),
+                'type': self._get_file_type_label(mime)
+            }
+            
+            # Categorize
+            if mime.startswith('video/') or mime in video_mimes:
+                videos.append(file_info)
+            elif mime.startswith('audio/') or mime in audio_mimes:
+                audio.append(file_info)
+            else:
+                documents.append(file_info)
+        
+        return {
+            'documents': documents,
+            'videos': videos,
+            'audio': audio,
+            'all': documents + videos + audio,
+            'counts': {
+                'documents': len(documents),
+                'videos': len(videos),
+                'audio': len(audio),
+                'total': len(documents) + len(videos) + len(audio)
+            }
+        }
+    
+    def _get_file_type_label(self, mime_type: str) -> str:
+        """Get human-readable file type label.
+        
+        Args:
+            mime_type: Google Drive MIME type
+            
+        Returns:
+            Human-readable type label
+        """
+        type_labels = {
+            'application/pdf': 'PDF',
+            'application/vnd.google-apps.document': 'Google Doc',
+            'application/vnd.google-apps.spreadsheet': 'Google Sheet',
+            'application/vnd.google-apps.presentation': 'Google Slides',
+            'text/plain': 'Text',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
+            'video/mp4': 'Video',
+            'video/quicktime': 'Video',
+            'video/webm': 'Video',
+            'audio/mpeg': 'Audio (MP3)',
+            'audio/mp4': 'Audio',
+            'audio/wav': 'Audio (WAV)',
+            'audio/ogg': 'Audio',
+        }
+        return type_labels.get(mime_type, 'Document')
     
     def get_file_metadata(self, file_id: str):
         """Get file metadata."""
