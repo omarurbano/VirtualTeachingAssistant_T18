@@ -148,9 +148,15 @@ async function uploadFiles(files) {
         try {
             const formData = new FormData();
             formData.append('file', file);
-            
-            console.log(`Uploading: ${file.name}`);
-            
+
+            // Add course_id if available
+            const courseId = window.currentCourseId || new URLSearchParams(window.location.search).get('course');
+            if (courseId) {
+                formData.append('course_id', courseId);
+            }
+
+            console.log(`Uploading: ${file.name} (course: ${courseId || 'none'})`);
+
             const response = await fetch(`${API_BASE}/api/upload`, {
                 method: 'POST',
                 body: formData
@@ -246,10 +252,16 @@ async function uploadImages(files) {
         try {
             const formData = new FormData();
             formData.append('file', file);
-            
+
+            // Add course_id if available
+            const courseId = window.currentCourseId || new URLSearchParams(window.location.search).get('course');
+            if (courseId) {
+                formData.append('course_id', courseId);
+            }
+
             // Show a temporary "processing" indicator for this specific image
             const tempToast = showToast(`Analyzing ${file.name}... (this may take a few moments)`);
-            
+
             const response = await fetch(`${API_BASE}/api/upload/image`, {
                 method: 'POST',
                 body: formData
@@ -498,11 +510,17 @@ function renderTableCitation(citation, index, scorePercent) {
     const markdownTable = citation.markdown_table || citation.verbatim;
     const tableRows = citation.table_rows || 'N/A';
     const tableCols = citation.table_columns || 'N/A';
-    
+
+    // Check if this citation has a source URL for clicking
+    const sourceUrl = citation.source_url || '';
+    const clickableSource = sourceUrl ?
+        `<a href="#" onclick="openCitation('${sourceUrl}'); return false;" class="citation-link">[${index + 1}] ${escapeHtml(citation.source_file)}</a>` :
+        `<span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>`;
+
     return `
         <div class="citation-item table-citation">
             <div class="citation-header">
-                <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
+                ${clickableSource}
                 <span class="citation-type-badge table-badge">TABLE</span>
                 <span class="citation-match">${scorePercent}%</span>
             </div>
@@ -518,21 +536,27 @@ function renderImageCitation(citation, index, scorePercent) {
     const caption = citation.image_caption || 'No caption available';
     const ocrText = citation.ocr_text || '';
     const hasText = citation.has_text;
-    
+
     let imageHtml = '';
     if (imageUrl) {
         imageHtml = `<div class="image-preview"><img src="${escapeHtml(imageUrl)}" alt="Image from ${escapeHtml(citation.source_file)}" onerror="this.style.display='none'" /></div>`;
     }
-    
+
     let ocrHtml = '';
     if (hasText && ocrText) {
         ocrHtml = `<div class="citation-ocr"><strong>OCR Text:</strong> "${escapeHtml(ocrText.substring(0, 200))}${ocrText.length > 200 ? '...' : ''}"</div>`;
     }
-    
+
+    // Check if this citation has a source URL for clicking
+    const sourceUrl = citation.source_url || '';
+    const clickableSource = sourceUrl ?
+        `<a href="#" onclick="openCitation('${sourceUrl}'); return false;" class="citation-link">[${index + 1}] ${escapeHtml(citation.source_file)}</a>` :
+        `<span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>`;
+
     return `
         <div class="citation-item image-citation">
             <div class="citation-header">
-                <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
+                ${clickableSource}
                 <span class="citation-type-badge image-badge">IMAGE</span>
                 <span class="citation-match">${scorePercent}%</span>
             </div>
@@ -550,19 +574,25 @@ function renderAudioCitation(citation, index, scorePercent) {
     const tone = citation.tone || 'neutral';
     const confidence = citation.transcription_confidence;
     const verbatim = citation.verbatim || '';
-    
+
     let metaParts = [];
     if (timestamp) metaParts.push(`at ${escapeHtml(timestamp)}`);
     if (speaker && speaker !== 'Unknown') metaParts.push(escapeHtml(speaker));
     if (tone && tone !== 'neutral') metaParts.push(`tone: ${escapeHtml(tone)}`);
     if (confidence) metaParts.push(`confidence: ${(confidence * 100).toFixed(0)}%`);
-    
+
     const metaStr = metaParts.length > 0 ? `<div class="citation-audio-meta">${metaParts.join(' | ')}</div>` : '';
-    
+
+    // Check if this citation has a source URL for clicking
+    const sourceUrl = citation.source_url || '';
+    const clickableSource = sourceUrl ?
+        `<a href="#" onclick="openCitation('${sourceUrl}'); return false;" class="citation-link">[${index + 1}] ${escapeHtml(citation.source_file)}</a>` :
+        `<span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>`;
+
     return `
         <div class="citation-item audio-citation">
             <div class="citation-header">
-                <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
+                ${clickableSource}
                 <span class="citation-type-badge audio-badge">AUDIO</span>
                 <span class="citation-match">${scorePercent}%</span>
             </div>
@@ -601,10 +631,16 @@ function addMessageWithCitations(type, content, citations = []) {
                 citationHtml = renderAudioCitation(citation, index, scorePercent);
             } else {
                 // Standard text citation
+                // Check if this citation has a source URL for clicking
+                const sourceUrl = citation.source_url || '';
+                const clickableSource = sourceUrl ?
+                    `<a href="#" onclick="openCitation('${sourceUrl}'); return false;" class="citation-link">[${index + 1}] ${escapeHtml(citation.source_file)}</a>` :
+                    `<span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>`;
+
                 citationHtml = `
                     <div class="citation-item">
                         <div class="citation-header">
-                            <span class="citation-source">[${index + 1}] ${escapeHtml(citation.source_file)}</span>
+                            ${clickableSource}
                             <span class="citation-match">${scorePercent}%</span>
                         </div>
                         <div class="citation-loc">${escapeHtml(citation.location)}</div>
@@ -635,6 +671,47 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function openCitation(sourceUrl) {
+    // Open PDF viewer or media player based on citation URL
+    if (!sourceUrl) {
+        showToast("No source URL available for this citation");
+        return;
+    }
+
+    try {
+        // Parse the URL to determine what type of viewer to open
+        const url = new URL(sourceUrl, window.location.origin);
+
+        if (sourceUrl.includes('/pdf/view')) {
+            // PDF viewer
+            openPdfViewer(sourceUrl);
+        } else if (sourceUrl.includes('/media/play')) {
+            // Video/audio player
+            openMediaPlayer(sourceUrl);
+        } else {
+            // Fallback: open in new tab
+            window.open(sourceUrl, '_blank');
+        }
+    } catch (error) {
+        console.error('Error parsing citation URL:', error);
+        showToast("Error opening citation source");
+    }
+}
+
+function openPdfViewer(sourceUrl) {
+    // Open PDF viewer in a modal or new window
+    // For now, open in new tab. In future, could implement modal viewer
+    window.open(sourceUrl, '_blank');
+    showToast("Opening PDF viewer...");
+}
+
+function openMediaPlayer(sourceUrl) {
+    // Open video/audio player in a modal or new window
+    // For now, open in new tab. In future, could implement embedded player
+    window.open(sourceUrl, '_blank');
+    showToast("Opening media player...");
+}
+
 function showToast(message) {
     const toast = document.createElement('div');
     toast.style.cssText = `
@@ -654,7 +731,7 @@ function showToast(message) {
     `;
     toast.textContent = `> ${message}`;
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.remove();
     }, 2500);

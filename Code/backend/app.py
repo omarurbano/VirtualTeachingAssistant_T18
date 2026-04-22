@@ -93,6 +93,12 @@ CORS(app)
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size (increased for audio/video)
 
+# Add uploads directory to static files
+@app.route('/uploads/<path:filename>')
+def serve_upload(filename):
+    """Serve uploaded files."""
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 # All audio extensions (comprehensive list)
 AUDIO_EXTENSIONS = {'mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'wma', 'aiff', 'opus', 'webm', 'amr', '3gp', 'midi', 'mid', 'ra', 'ram', 'mp2', 'ac3'}
 
@@ -1399,6 +1405,10 @@ def process_with_unified_processor(file_path: str, file_id: str) -> Dict[str, An
                     meta['estimated_speakers'] = chunk.metadata.get('estimated_speakers', 1)
                     meta['speech_rate_wpm'] = chunk.metadata.get('speech_rate_wpm', 0.0)
             
+            # Ensure course_id is set in metadata
+            if course_id:
+                meta['course_id'] = course_id
+
             # Add to lists - use chunk.content
             documents.append(ChunkDoc(chunk.content, meta))
             metadatas.append(meta)
@@ -1564,19 +1574,18 @@ def process_uploaded_file(file_path: str, file_id: str, course_id: str = None) -
             
             # Add metadata to chunks (including course_id for course scoping)
             # Get course_id from uploaded_files if available (passed from embed endpoint)
-            chunk_course_id = None
-            if file_id in app_state.uploaded_files:
+            chunk_course_id = course_id  # Use the course_id parameter directly
+            if not chunk_course_id and file_id in app_state.uploaded_files:
                 chunk_course_id = app_state.uploaded_files[file_id].get('course_id')
-            
+
             for i, chunk in enumerate(chunks):
                 if not hasattr(chunk, 'metadata') or not chunk.metadata:
                     chunk.metadata = {}
                 chunk.metadata['chunk_index'] = i
                 chunk.metadata['document_id'] = file_id
                 chunk.metadata['filename'] = filename
-                # Add course_id to chunk metadata for course scoping
-                if chunk_course_id:
-                    chunk.metadata['course_id'] = chunk_course_id
+                chunk.metadata['course_id'] = chunk_course_id  # Always set course_id
+                chunk.metadata['source_type'] = 'pdf_upload'
             
             # Generate embeddings with timeout protection
             logger.info(f"Generating embeddings for {len(chunks)} chunks...")
@@ -1952,9 +1961,32 @@ def retrieve_and_answer(query: str, max_results: int = 5, course_id: str = None)
             if len(content) > 300:
                 verbatim += "..."
             
-            # Build base citation
+            # Build base citation with URL for jumping to location
+            file_id = metadata.get('file_id', '')
+            file_name = metadata.get('file_name', metadata.get('filename', 'Unknown'))
+            
+            # Get timestamp for media
+            timestamp_start = metadata.get('timestamp_start')
+            
+            # Build source_url for clicking to open at location
+            # For PDFs: could be Google Drive view URL + page parameter, or local PDF viewer
+            # For media: video/audio player with timestamp
+            source_url = ''
+            if element_type not in ['image', 'table']:
+                # Check if it's a media transcript (has timestamp)
+                if timestamp_start is not None:
+                    # It's a media transcript - URL would open video player at timestamp
+                    source_url = f"/media/play?file={file_id}&t={timestamp_start}"
+                else:
+                    # It's a PDF/document - URL would open PDF viewer at page
+                    if page_num and page_num != 'N/A':
+                        source_url = f"/pdf/view?file={file_id}&page={page_num}"
+                    else:
+                        source_url = f"/pdf/view?file={file_id}"
+            
             citation = {
-                'source_file': metadata.get('filename', 'Unknown'),
+                'source_file': file_name,
+                'file_id': file_id,
                 'page_number': page_num,
                 'chunk_index': metadata.get('chunk_index', 0),
                 'similarity_score': metadata.get('similarity_score', 0),
@@ -1962,7 +1994,9 @@ def retrieve_and_answer(query: str, max_results: int = 5, course_id: str = None)
                 'verbatim': verbatim,
                 'full_text': content,
                 'source_type': element_type,
-                'location': f"Page {page_num}, {element_type.title()}"
+                'location': f"Page {page_num}, {element_type.title()}",
+                'source_url': source_url,
+                'timestamp_start': timestamp_start if metadata.get('timestamp_start') else None
             }
             
             # Add relevance breakdown if available
@@ -3276,29 +3310,94 @@ def health_check():
         }
     })
 
+@app.route('/media/play', methods=['GET'])
+def play_media():
+    """Play video/audio at specific timestamp."""
+    try:
+        file_id = request.args.get('file')
+        timestamp = request.args.get('t', '0')
+        
+        # Find the media file info
+        media_info = None
+        if hasattr(app_state, 'media_transcripts'):
+            for m in app_state.media_transcripts.values():
+                if m.get('file_id') == file_id:
+                    media_info = m
+                    break
+        
+        if not media_info:
+            return jsonify({'error': 'Media not found'}), 404
+        
+        return jsonify({
+            'filename': media_info.get('filename'),
+            'file_type': media_info.get('file_type'),
+            'transcript': media_info.get('transcript', ''),
+            'segments': media_info.get('segments', []),
+            'timestamp': timestamp,
+            'message': f'Playing at {timestamp} seconds'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/pdf/view', methods=['GET'])
+def view_pdf():
+    """View PDF at specific page."""
+    try:
+        file_id = request.args.get('file')
+        page = request.args.get('page', '1')
+        
+        # Find the PDF file info
+        pdf_info = None
+        if hasattr(app_state, 'uploaded_files'):
+            for f_id, f_info in app_state.uploaded_files.items():
+                if f_id == file_id:
+                    pdf_info = f_info
+                    break
+        
+        if not pdf_info:
+            return jsonify({'error': 'PDF not found'}), 404
+        
+        return jsonify({
+            'filename': pdf_info.get('filename'),
+            'page': page,
+            'chunks': pdf_info.get('chunks', 0),
+            'message': f'Viewing page {page}'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/initialize', methods=['POST'])
 def initialize():
     """Initialize the RAG application."""
     try:
         if not app_state.is_initialized:
             app_state.initialize()
-        
-        # Load vector chunks from database for persistence
+
+        # Always load vector chunks from database for persistence (regardless of initialization status)
+        print("DEBUG: About to load vector chunks from database")
+        print(f"DEBUG: NODE_API_URL = {NODE_API_URL}")
         try:
             import requests
-            
+            logger.info(f"Attempting to load chunks from {NODE_API_URL}/api/vector-chunks")
+
             chunks_resp = requests.get(f"{NODE_API_URL}/api/vector-chunks", timeout=10)
+            logger.info(f"Chunks response status: {chunks_resp.status_code}")
+
             if chunks_resp.ok:
                 all_chunks = chunks_resp.json()
+                logger.info(f"Received {len(all_chunks) if all_chunks else 0} chunks from database")
+
                 if all_chunks and isinstance(all_chunks, list) and len(all_chunks) > 0:
                     logger.info(f"Loading {len(all_chunks)} chunks from database")
-                    
+
                     # Convert to simple documents
                     class SimpleDoc:
                         def __init__(self, page_content, metadata):
                             self.page_content = page_content
                             self.metadata = metadata
-                    
+
                     docs = []
                     metadatas = []
                     for chunk in all_chunks:
@@ -3307,21 +3406,36 @@ def initialize():
                             metadata = chunk.get('metadata', {}) or {}
                             metadata['file_id'] = chunk.get('file_id')
                             metadata['file_name'] = chunk.get('file_name')
-                            
+
                             if text and len(text) > 10:
                                 docs.append(SimpleDoc(page_content=text, metadata=metadata))
                                 metadatas.append(metadata)
                         except Exception as e:
                             logger.warning(f"Could not load chunk: {e}")
-                    
+
+                    logger.info(f"Created {len(docs)} valid documents")
+
                     if docs:
+                        logger.info("Calculating embeddings...")
                         # Get embeddings
                         texts = [d.page_content for d in docs]
                         embeddings = app_state.embedding_manager.embed_documents(texts)
+                        logger.info(f"Got {len(embeddings)} embeddings")
+
                         app_state.vector_store.add_documents(docs, embeddings, metadatas)
                         logger.info(f"Added {len(docs)} documents to vector store")
+                    else:
+                        logger.warning("No valid documents to add")
+                else:
+                    logger.warning("No chunks received or chunks is not a list")
+            else:
+                logger.warning(f"Failed to get chunks: {chunks_resp.text}")
         except Exception as load_err:
-            logger.warning(f"Could not load from database: {load_err}")
+            logger.error(f"Could not load from database: {load_err}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+        
+
         
         # Check which embedding provider is being used
         embedding_provider = os.environ.get('EMBEDDING_PROVIDER', '').lower()
@@ -3595,6 +3709,49 @@ def query():
         # Check both uploaded_files list AND vector store
         has_uploaded_list = app_state.uploaded_files and len(app_state.uploaded_files) > 0
         has_vector_docs = hasattr(app_state.vector_store, 'documents') and len(app_state.vector_store.documents) > 0
+
+        # If no vector documents but we have chunks in database, load them now
+        if not has_vector_docs:
+            try:
+                import requests
+                logger.info("No vector documents found, loading from database...")
+                chunks_resp = requests.get(f"{NODE_API_URL}/api/vector-chunks", timeout=10)
+
+                if chunks_resp.ok:
+                    all_chunks = chunks_resp.json()
+                    if all_chunks and isinstance(all_chunks, list) and len(all_chunks) > 0:
+                        # Convert to simple documents
+                        class SimpleDoc:
+                            def __init__(self, page_content, metadata):
+                                self.page_content = page_content
+                                self.metadata = metadata
+
+                        docs = []
+                        metadatas = []
+                        for chunk in all_chunks:
+                            try:
+                                text = chunk.get('text', '')
+                                metadata = chunk.get('metadata', {}) or {}
+                                metadata['file_id'] = chunk.get('file_id')
+                                metadata['file_name'] = chunk.get('file_name')
+
+                                if text and len(text) > 10:
+                                    docs.append(SimpleDoc(page_content=text, metadata=metadata))
+                                    metadatas.append(metadata)
+                            except Exception as e:
+                                logger.warning(f"Could not load chunk: {e}")
+
+                        if docs:
+                            logger.info(f"Loading {len(docs)} documents from database")
+                            # Get embeddings
+                            texts = [d.page_content for d in docs]
+                            embeddings = app_state.embedding_manager.embed_documents(texts)
+                            app_state.vector_store.add_documents(docs, embeddings, metadatas)
+                            logger.info(f"Added {len(docs)} documents to vector store")
+                            has_vector_docs = True
+            except Exception as load_err:
+                logger.warning(f"Failed to load chunks on demand: {load_err}")
+
         has_documents = has_uploaded_list or has_vector_docs
         
         # DEBUG: Print what's happening
@@ -4738,6 +4895,58 @@ def embed_drive_file():
             # Process PDF/document as usual
             result = process_uploaded_file(file_path, file_id_new, course_id)
             
+            # Get the chunks that were just created and save to database
+            if result.get('success') and hasattr(app_state, 'vector_store'):
+                try:
+                    # Find chunks for this file in vector store
+                    file_docs = []
+                    file_metas = []
+                    for i, m in enumerate(app_state.vector_store.metadatas):
+                        doc_id = m.get('document_id', m.get('file_id', ''))
+                        if doc_id == file_id_new:
+                            file_docs.append(app_state.vector_store.documents[i])
+                            file_metas.append(m)
+                    
+                    if file_docs and file_metas:
+                        # Get embeddings
+                        texts = [d.page_content if hasattr(d, 'page_content') else str(d) for d in file_docs]
+                        embs = app_state.embedding_manager.embed_documents(texts)
+                        
+                        # Save to vector_chunks
+                        db_chunks = []
+                        for i, (doc, meta) in enumerate(zip(file_docs, file_metas)):
+                            text = doc.page_content if hasattr(doc, 'page_content') else str(doc)
+                            if text and len(text) > 10:
+                                db_chunks.append({
+                                    'course_id': course_id,
+                                    'file_id': file_id_new,
+                                    'file_name': meta.get('filename', file_name),
+                                    'text': text,
+                                    'chunk_index': i,
+                                    'embedding': embs[i] if i < len(embs) else None,
+                                    'metadata': {
+                                        'course_id': course_id,
+                                        'document_id': file_id_new,
+                                        'filename': meta.get('filename', file_name),
+                                        'element_type': meta.get('element_type', 'text'),
+                                        'page': meta.get('page'),
+                                        'source_type': 'pdf_upload'
+                                    }
+                                })
+                        
+                        if db_chunks:
+                            save_resp = requests.post(
+                                f"{NODE_API_URL}/api/vector-chunks",
+                                json={'chunks': db_chunks},
+                                timeout=30
+                            )
+                            if save_resp.ok:
+                                logger.info(f"Saved {len(db_chunks)} PDF chunks to database for {file_name}")
+                            else:
+                                logger.warning(f"Could not save PDF chunks: {save_resp.text}")
+                except Exception as save_err:
+                    logger.warning(f"Error saving PDF chunks: {save_err}")
+            
             # Add course_id to the file metadata for course scoping
             if result.get('success') and 'uploaded_files' in dir(app_state):
                 if file_id_new in app_state.uploaded_files:
@@ -5012,27 +5221,27 @@ def embed_media_file():
             
             # Save to database
             try:
-                requests.post(
-                    f"{NODE_API_URL}/api/materials",
-                    json={
-                        'course_id': course_id,
-                        'source_type': 'media_transcript',
-                        'file_name': file_name,
-                        'chunks_count': len(result.segments),
-                        'file_id': file_id_new,
-                        'metadata': {
-                            'duration': result.duration_seconds,
-                            'speaker_count': result.speaker_count,
-                            'language': result.language,
-                            'word_count': result.word_count,
-                            'media_type': result.file_type
-                        }
-                    },
-                    timeout=5
-                )
+                materials_resp = requests.post(f"{NODE_API_URL}/api/materials", json={
+                    'course_id': course_id,
+                    'source_type': 'media_transcript',
+                    'file_name': file_name,
+                    'chunks_count': len(result.segments),
+                    'file_id': file_id_new,
+                    'metadata': {
+                        'duration': result.duration_seconds,
+                        'speaker_count': result.speaker_count,
+                        'language': result.language,
+                        'word_count': result.word_count,
+                        'media_type': result.file_type
+                    }
+                }, timeout=5)
+                if materials_resp.ok:
+                    logger.info(f"Saved media material to database: {file_name}")
+                else:
+                    logger.warning(f"Could not save media material: {materials_resp.text}")
             except Exception as db_error:
-                logger.warning(f"Could not save to database: {db_error}")
-            
+                logger.warning(f"Could not save media material to database: {db_error}")
+
             # Save transcript segments to vector_chunks for persistent search
             try:
                 transcript_chunks = []
@@ -5040,22 +5249,23 @@ def embed_media_file():
                     text = seg.content if seg.content else ''
                     if text and len(text) > 10:
                         transcript_chunks.append({
-                            'course_id': course_id,
-                            'file_id': file_id_new,
+                            'course_id': str(course_id),  # Ensure string
+                            'file_id': str(file_id_new),   # Ensure string
                             'file_name': file_name,
                             'text': text,
                             'chunk_index': idx,
                             'embedding': seg.embedding if seg.embedding else None,
                             'metadata': {
-                                'course_id': course_id,
+                                'course_id': str(course_id),
                                 'source_type': 'media_transcript',
                                 'timestamp_start': seg.start_time,
                                 'timestamp_end': seg.end_time,
                                 'speaker': seg.speaker,
-                                'language': result.language
+                                'language': result.language,
+                                'element_type': 'audio'
                             }
                         })
-                
+
                 if transcript_chunks:
                     save_chunks_resp = requests.post(
                         f"{NODE_API_URL}/api/vector-chunks",
@@ -5066,8 +5276,11 @@ def embed_media_file():
                         logger.info(f"Saved {len(transcript_chunks)} transcript chunks to database")
                     else:
                         logger.warning(f"Could not save transcript chunks: {save_chunks_resp.text}")
+                        logger.warning(f"Response content: {save_chunks_resp.content}")
             except Exception as save_chunks_err:
                 logger.warning(f"Could not save transcript chunks: {save_chunks_err}")
+                import traceback
+                logger.warning(f"Traceback: {traceback.format_exc()}")
             
             # Clean up temp file
             cleanup_temp(file_path, temp_dir)
@@ -5188,6 +5401,315 @@ def query_media_transcript():
 
 
 # ============================================================================
+# PDF VIEWER ENDPOINTS
+# ============================================================================
+
+@app.route('/pdf/view')
+def pdf_viewer():
+    """Serve PDF viewer page."""
+    file_id = request.args.get('file')
+    page = int(request.args.get('page', 1))
+
+    if not file_id:
+        abort(400, 'File ID required')
+
+    try:
+        # Find the file in course_materials
+        response = requests.get(f"{NODE_API_URL}/api/materials", timeout=5)
+        materials = response.json() if response.ok else []
+
+        material = None
+        for m in materials:
+            if str(m.get('file_id', '')) == str(file_id):
+                material = m
+                break
+
+        if not material:
+            abort(404, 'PDF not found')
+
+        # Generate HTML for PDF viewer
+        pdf_viewer_html = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer - {filename}</title>
+    <style>
+        body {{
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+        }}
+        .viewer-container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }}
+        .viewer-header {{
+            padding: 16px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .viewer-title {{
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }}
+        .viewer-controls {{
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }}
+        .page-info {{
+            font-size: 14px;
+            color: #666;
+        }}
+        .nav-btn {{
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }}
+        .nav-btn:hover {{
+            background: #f0f0f0;
+        }}
+        .nav-btn:disabled {{
+            opacity: 0.5;
+            cursor: not-allowed;
+        }}
+        iframe {{
+            width: 100%;
+            height: calc(100vh - 120px);
+            border: none;
+        }}
+    </style>
+</head>
+<body>
+    <div class="viewer-container">
+        <div class="viewer-header">
+            <div class="viewer-title">{filename}</div>
+            <div class="viewer-controls">
+                <button class="nav-btn" id="prevBtn" onclick="changePage(-1)">Previous</button>
+                <span class="page-info">Page <span id="currentPage">{page}</span></span>
+                <button class="nav-btn" id="nextBtn" onclick="changePage(1)">Next</button>
+            </div>
+        </div>
+        <iframe id="pdfFrame" src="/pdf/serve/{file_id}?page={page}"></iframe>
+    </div>
+
+    <script>
+        let currentPage = {page};
+        const totalPages = 100; // This would be determined by PDF.js or similar
+
+        function changePage(delta) {{
+            const newPage = currentPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {{
+                currentPage = newPage;
+                document.getElementById('currentPage').textContent = currentPage;
+                document.getElementById('pdfFrame').src = '/pdf/serve/{file_id}?page=' + currentPage;
+
+                // Update button states
+                document.getElementById('prevBtn').disabled = currentPage <= 1;
+                document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+            }}
+        }}
+
+        // Initialize button states
+        document.getElementById('prevBtn').disabled = currentPage <= 1;
+        document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+    </script>
+</body>
+</html>'''.format(
+            filename=str(material['file_name']),
+            page=str(page),
+            file_id=str(file_id)
+        )
+
+        return pdf_viewer_html
+
+    except Exception as e:
+        logger.error(f"PDF viewer error: {e}")
+        abort(500, str(e))
+
+
+@app.route('/pdf/serve/<file_id>')
+def serve_pdf(file_id):
+    """Serve PDF file content."""
+    try:
+        # Find the file in course_materials
+        response = requests.get(f"{NODE_API_URL}/api/materials", timeout=5)
+        materials = response.json() if response.ok else []
+
+        material = None
+        for m in materials:
+            if str(m.get('file_id', '')) == str(file_id):
+                material = m
+                break
+
+        if not material:
+            abort(404, 'PDF not found')
+
+        # Check if file exists in uploads directory
+        import os
+        uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads')
+        filename = f"{file_id}_{material['file_name']}"
+        file_path = os.path.join(uploads_dir, filename)
+
+        if not os.path.exists(file_path):
+            abort(404, f'PDF file not found on disk: {file_path}')
+
+        # Serve the PDF file
+        return send_from_directory(uploads_dir, filename, as_attachment=False, mimetype='application/pdf')
+
+    except Exception as e:
+        logger.error(f"PDF serve error: {e}")
+        abort(500, str(e))
+
+
+# ============================================================================
+# MEDIA PLAYER ENDPOINTS
+# ============================================================================
+
+@app.route('/media/play')
+def media_player():
+    """Serve media player page."""
+    file_id = request.args.get('file')
+    timestamp = int(request.args.get('t', 0))
+
+    if not file_id:
+        abort(400, 'File ID required')
+
+    try:
+        # Find media file info (this would need to be implemented based on your data structure)
+        # For now, create a simple player page
+        media_player_html = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Player - {file_id}</title>
+    <style>
+        body {{
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }}
+        .player-container {{
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+            max-width: 800px;
+            width: 100%;
+        }}
+        .player-title {{
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+            text-align: center;
+        }}
+        video, audio {{
+            width: 100%;
+            border-radius: 4px;
+        }}
+        .timestamp-info {{
+            margin-top: 16px;
+            padding: 12px;
+            background: #f0f8ff;
+            border-radius: 4px;
+            text-align: center;
+            color: #666;
+        }}
+        .controls {{
+            margin-top: 16px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+        }}
+        .control-btn {{
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }}
+        .control-btn:hover {{
+            background: #0056b3;
+        }}
+        .error-msg {{
+            color: #dc3545;
+            text-align: center;
+            margin: 20px 0;
+        }}
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <div class="player-title">Media Player - {file_id}</div>
+
+        <div class="error-msg">
+            Media file serving is not yet fully implemented.<br>
+            This feature requires additional setup to locate and serve media files.
+        </div>
+
+        <div class="timestamp-info">
+            Starting at: {minutes}:{seconds}
+        </div>
+
+        <div class="controls">
+            <button class="control-btn" onclick="window.close()">Close Player</button>
+        </div>
+    </div>
+
+    <script>
+        // Placeholder for future media player functionality
+        console.log('Media player loaded for file:', '{file_id}', 'at timestamp:', {timestamp});
+    </script>
+</body>
+</html>'''.format(
+            file_id=str(file_id),
+            minutes=str(timestamp // 60),
+            seconds=('0' + str(timestamp % 60))[-2:],
+            timestamp=str(timestamp)
+        )
+
+        return media_player_html
+
+    except Exception as e:
+        logger.error(f"Media player error: {e}")
+        abort(500, str(e))
+
+
+@app.route('/media/serve/<file_id>')
+def serve_media(file_id):
+    """Serve media file content."""
+    try:
+        # Placeholder - this would need to find the actual media file
+        # For now, return an error
+        abort(404, 'Media file serving not yet implemented')
+
+    except Exception as e:
+        logger.error(f"Media serve error: {e}")
+        abort(500, str(e))
+
+
+# ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
@@ -5195,7 +5717,7 @@ if __name__ == '__main__':
     # Initialize on startup (only once, not on reloader)
     if not app_state.is_initialized:
         app_state.initialize()
-    
+
     # Run Flask (disable reloader to prevent double initialization issues)
     app.run(
         host='0.0.0.0',

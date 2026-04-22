@@ -330,6 +330,20 @@ body {
     color: var(--accent-primary);
 }
 
+.citation-link {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--accent-primary);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.citation-link:hover {
+    color: var(--accent-secondary);
+    text-decoration: underline;
+}
+
 .citation-match {
     font-family: var(--font-mono);
     font-size: 0.7rem;

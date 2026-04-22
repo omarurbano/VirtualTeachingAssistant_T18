@@ -409,9 +409,9 @@ app.get('/api/vector-chunks', async (req, res) => {
         const { data, error } = await supabase
             .from('vector_chunks')
             .select('*');
-        
+
         if (error) throw error;
-        
+
         const chunks = data.map(row => ({
             course_id: row.course_id,
             file_id: row.file_id,
@@ -421,13 +421,15 @@ app.get('/api/vector-chunks', async (req, res) => {
             embedding: Array.from(new Float32Array(row.embedding)),
             metadata: row.metadata
         }));
-        
+
         res.json(chunks);
     } catch (err) {
         console.error('Get all vector chunks error:', err);
         res.status(500).json({ error: err.message });
     }
 });
+
+
 
 // ============================================
 // START SERVER
