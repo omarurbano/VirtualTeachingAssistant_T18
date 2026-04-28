@@ -1962,7 +1962,45 @@ def retrieve_and_answer(query: str, max_results: int = 5, course_id: str = None)
                 verbatim += "..."
             
             # Build base citation with URL for jumping to location
-            file_id = metadata.get('file_id', '')
+            # Use google_drive_file_id if available (for media), otherwise use file_id (for PDFs/text)
+            file_id = metadata.get('google_drive_file_id') or metadata.get('file_id', '')
+            
+            # If file_id is still empty, try to look up from database using filename
+            if not file_id:
+                file_name = metadata.get('file_name', metadata.get('filename', ''))
+                course_id = metadata.get('course_id', '')
+                source_type = metadata.get('source_type', '')
+                
+                if file_name and course_id:
+                    # Try to get original Google Drive file_id from database by filename
+                    try:
+                        # Get materials for this course - endpoint is /api/materials/:courseId
+                        resp = requests.get(f"{NODE_API_URL}/api/materials/{course_id}", timeout=5)
+                        if resp.ok:
+                            materials = resp.json()
+                            
+                            # For media transcripts, prefer the media_transcript entry
+                            # (which has the real Google Drive ID)
+                            # For PDFs/documents, use any entry with matching filename
+                            if 'media' in source_type or metadata.get('timestamp_start') is not None:
+                                for m in materials:
+                                    if m.get('file_name') == file_name and m.get('source_type') == 'media_transcript':
+                                        file_id = m.get('file_id', '')
+                                        if file_id and len(file_id) > 20:  # Google Drive IDs are ~25 chars
+                                            logger.info(f"Found Google Drive file_id (media_transcript) for {file_name}: {file_id}")
+                                            break
+                            
+                            # If still not found, try any matching filename
+                            if not file_id:
+                                for m in materials:
+                                    if m.get('file_name') == file_name:
+                                        file_id = m.get('file_id', '')
+                                        if file_id:
+                                            logger.info(f"Found file_id for {file_name}: {file_id}")
+                                            break
+                    except Exception as e:
+                        logger.warning(f"Could not lookup file_id from database: {e}")
+            
             file_name = metadata.get('file_name', metadata.get('filename', 'Unknown'))
             
             # Get timestamp for media
@@ -2074,10 +2112,23 @@ def retrieve_and_answer(query: str, max_results: int = 5, course_id: str = None)
             
             # Add media citations to the main citations list
             for media_cit in media_citations:
+                # Get the Google Drive file_id from media storage
+                media_filename = media_cit.get('source_file', '')
+                google_drive_file_id = ''
+                for m_key, m_data in app_state.media_transcripts.items():
+                    if m_data.get('filename') == media_filename:
+                        google_drive_file_id = m_data.get('file_id', '')
+                        break
+                
+                timestamp_start = media_cit.get('timestamp_start', 0)
+                source_url = f"/media/play?file={google_drive_file_id}&t={timestamp_start}" if google_drive_file_id else ''
+                
                 citation = {
                     'source_file': media_cit.get('source_file', 'Unknown Media'),
+                    'file_id': google_drive_file_id,
+                    'source_url': source_url,
                     'page_number': None,  # No page for media
-                    'timestamp_start': media_cit.get('timestamp_start', 0),
+                    'timestamp_start': timestamp_start,
                     'timestamp_end': media_cit.get('timestamp_end', 0),
                     'verbatim': media_cit.get('content', '')[:300],
                     'full_text': media_cit.get('content', ''),
@@ -3339,30 +3390,24 @@ def play_media():
 
 @app.route('/pdf/view', methods=['GET'])
 def view_pdf():
-    """View PDF at specific page."""
-    try:
-        file_id = request.args.get('file')
-        page = request.args.get('page', '1')
-        
-        # Find the PDF file info
-        pdf_info = None
-        if hasattr(app_state, 'uploaded_files'):
-            for f_id, f_info in app_state.uploaded_files.items():
-                if f_id == file_id:
-                    pdf_info = f_info
-                    break
-        
-        if not pdf_info:
-            return jsonify({'error': 'PDF not found'}), 404
-        
-        return jsonify({
-            'filename': pdf_info.get('filename'),
-            'page': page,
-            'chunks': pdf_info.get('chunks', 0),
-            'message': f'Viewing page {page}'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    """Redirect to Google Drive PDF viewer at specific page."""
+    file_id = request.args.get('file')
+    page = request.args.get('page', '1')
+    
+    logger.info(f"PDF view request: file_id={file_id}, page={page}")
+    
+    if not file_id:
+        return jsonify({'error': 'File ID required'}), 400
+    
+    # Construct Google Drive URL
+    # Note: Google Drive doesn't support direct page parameter in URL,
+    # but we can try to use the preview URL with specific page
+    drive_url = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+    
+    logger.info(f"Redirecting to: {drive_url}")
+    
+    # Redirect to Google Drive
+    return redirect(drive_url)
 
 
 @app.route('/api/initialize', methods=['POST'])
@@ -4933,6 +4978,7 @@ def embed_drive_file():
                                     'metadata': {
                                         'course_id': course_id,
                                         'document_id': file_id_new,
+                                        'google_drive_file_id': file_id,  # Store original Google Drive file_id
                                         'filename': meta.get('filename', file_name),
                                         'element_type': meta.get('element_type', 'text'),
                                         'page': meta.get('page'),
@@ -5137,7 +5183,8 @@ def embed_media_file():
             params = {'alt': 'media'}
             headers = {'Authorization': f'Bearer {access_token}'}
             
-            response = requests.get(url, params=params, headers=headers, timeout=120)
+            # Increased timeout for large video files download
+            response = requests.get(url, params=params, headers=headers, timeout=300)
             
             if not response.ok:
                 return jsonify({'error': f'Download failed: {response.status_code}'}), 500
@@ -5264,6 +5311,7 @@ def embed_media_file():
                             'metadata': {
                                 'course_id': str(course_id),
                                 'source_type': 'media_transcript',
+                                'google_drive_file_id': file_id,  # Store original Google Drive file_id
                                 'timestamp_start': seg.start_time,
                                 'timestamp_end': seg.end_time,
                                 'speaker': seg.speaker,
@@ -5412,138 +5460,19 @@ def query_media_transcript():
 
 @app.route('/pdf/view')
 def pdf_viewer():
-    """Serve PDF viewer page."""
+    """Redirect to Google Drive PDF viewer."""
     file_id = request.args.get('file')
-    page = int(request.args.get('page', 1))
-
+    
     if not file_id:
         abort(400, 'File ID required')
-
-    try:
-        # Find the file in course_materials
-        response = requests.get(f"{NODE_API_URL}/api/materials", timeout=5)
-        materials = response.json() if response.ok else []
-
-        material = None
-        for m in materials:
-            if str(m.get('file_id', '')) == str(file_id):
-                material = m
-                break
-
-        if not material:
-            abort(404, 'PDF not found')
-
-        # Generate HTML for PDF viewer
-        pdf_viewer_html = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Viewer - {filename}</title>
-    <style>
-        body {{
-            margin: 0;
-            padding: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #f5f5f5;
-        }}
-        .viewer-container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }}
-        .viewer-header {{
-            padding: 16px 20px;
-            border-bottom: 1px solid #e0e0e0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }}
-        .viewer-title {{
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-        }}
-        .viewer-controls {{
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }}
-        .page-info {{
-            font-size: 14px;
-            color: #666;
-        }}
-        .nav-btn {{
-            padding: 6px 12px;
-            border: 1px solid #ddd;
-            background: white;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }}
-        .nav-btn:hover {{
-            background: #f0f0f0;
-        }}
-        .nav-btn:disabled {{
-            opacity: 0.5;
-            cursor: not-allowed;
-        }}
-        iframe {{
-            width: 100%;
-            height: calc(100vh - 120px);
-            border: none;
-        }}
-    </style>
-</head>
-<body>
-    <div class="viewer-container">
-        <div class="viewer-header">
-            <div class="viewer-title">{filename}</div>
-            <div class="viewer-controls">
-                <button class="nav-btn" id="prevBtn" onclick="changePage(-1)">Previous</button>
-                <span class="page-info">Page <span id="currentPage">{page}</span></span>
-                <button class="nav-btn" id="nextBtn" onclick="changePage(1)">Next</button>
-            </div>
-        </div>
-        <iframe id="pdfFrame" src="/pdf/serve/{file_id}?page={page}"></iframe>
-    </div>
-
-    <script>
-        let currentPage = {page};
-        const totalPages = 100; // This would be determined by PDF.js or similar
-
-        function changePage(delta) {{
-            const newPage = currentPage + delta;
-            if (newPage >= 1 && newPage <= totalPages) {{
-                currentPage = newPage;
-                document.getElementById('currentPage').textContent = currentPage;
-                document.getElementById('pdfFrame').src = '/pdf/serve/{file_id}?page=' + currentPage;
-
-                // Update button states
-                document.getElementById('prevBtn').disabled = currentPage <= 1;
-                document.getElementById('nextBtn').disabled = currentPage >= totalPages;
-            }}
-        }}
-
-        // Initialize button states
-        document.getElementById('prevBtn').disabled = currentPage <= 1;
-        document.getElementById('nextBtn').disabled = currentPage >= totalPages;
-    </script>
-</body>
-</html>'''.format(
-            filename=str(material['file_name']),
-            page=str(page),
-            file_id=str(file_id)
-        )
-
-        return pdf_viewer_html
-
-    except Exception as e:
-        logger.error(f"PDF viewer error: {e}")
-        abort(500, str(e))
+    
+    logger.info(f"PDF view request: file_id={file_id}")
+    
+    # Redirect to Google Drive
+    drive_url = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+    logger.info(f"Redirecting to: {drive_url}")
+    
+    return redirect(drive_url)
 
 
 @app.route('/pdf/serve/<file_id>')
@@ -5584,123 +5513,8 @@ def serve_pdf(file_id):
 # MEDIA PLAYER ENDPOINTS
 # ============================================================================
 
-@app.route('/media/play')
-def media_player():
-    """Serve media player page."""
-    file_id = request.args.get('file')
-    timestamp = int(request.args.get('t', 0))
-
-    if not file_id:
-        abort(400, 'File ID required')
-
-    try:
-        # Find media file info (this would need to be implemented based on your data structure)
-        # For now, create a simple player page
-        media_player_html = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Media Player - {file_id}</title>
-    <style>
-        body {{
-            margin: 0;
-            padding: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #f5f5f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }}
-        .player-container {{
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            padding: 20px;
-            max-width: 800px;
-            width: 100%;
-        }}
-        .player-title {{
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 16px;
-            text-align: center;
-        }}
-        video, audio {{
-            width: 100%;
-            border-radius: 4px;
-        }}
-        .timestamp-info {{
-            margin-top: 16px;
-            padding: 12px;
-            background: #f0f8ff;
-            border-radius: 4px;
-            text-align: center;
-            color: #666;
-        }}
-        .controls {{
-            margin-top: 16px;
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-        }}
-        .control-btn {{
-            padding: 8px 16px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }}
-        .control-btn:hover {{
-            background: #0056b3;
-        }}
-        .error-msg {{
-            color: #dc3545;
-            text-align: center;
-            margin: 20px 0;
-        }}
-    </style>
-</head>
-<body>
-    <div class="player-container">
-        <div class="player-title">Media Player - {file_id}</div>
-
-        <div class="error-msg">
-            Media file serving is not yet fully implemented.<br>
-            This feature requires additional setup to locate and serve media files.
-        </div>
-
-        <div class="timestamp-info">
-            Starting at: {minutes}:{seconds}
-        </div>
-
-        <div class="controls">
-            <button class="control-btn" onclick="window.close()">Close Player</button>
-        </div>
-    </div>
-
-    <script>
-        // Placeholder for future media player functionality
-        console.log('Media player loaded for file:', '{file_id}', 'at timestamp:', {timestamp});
-    </script>
-</body>
-</html>'''.format(
-            file_id=str(file_id),
-            minutes=str(timestamp // 60),
-            seconds=('0' + str(timestamp % 60))[-2:],
-            timestamp=str(timestamp)
-        )
-
-        return media_player_html
-
-    except Exception as e:
-        logger.error(f"Media player error: {e}")
-        abort(500, str(e))
-
+# Note: /media/play route is defined earlier and redirects to Google Drive
+# /media/serve/<file_id> is kept for potential future internal use
 
 @app.route('/media/serve/<file_id>')
 def serve_media(file_id):
