@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# Credentials / secrets
+credentials.json
+token.json
+*.pem
+*.key
+
+# Data (large files — do not commit raw downloads or generated datasets)
+Synthetic_Data_Generation/output/
+Synthetic_Data_Generation/_raw/
+*.jsonl
+*.parquet
+
+# Cluster logs
+slurm_out/
+*.out
+*.err
+
+# OS
+Thumbs.db
+.DS_Store
+*.tmp
+
+# IDE
+.vscode/
+.idea/
