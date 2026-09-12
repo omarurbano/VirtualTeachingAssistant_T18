@@ -6,30 +6,32 @@ Generates LoRA/QLoRA-ready training data from Google Drive course files using NV
 
 ```
 Google Drive Course Files
-         │
-         ▼
-  ┌─────────────┐     ┌──────────────┐     ┌──────────────────┐
-  │ drive_loader │────▶│ text_extractor│────▶│  seed_generator  │
-  │  (OAuth2)    │     │ (Unstructured)│     │  (NVIDIA NIM)    │
-  └─────────────┘     └──────────────┘     └────────┬─────────┘
-         │                                          │
-    raw bytes                                    Q&A seeds
-         │                                          │
-         ▼                                          ▼
-  ┌──────────────────────────────────────────────────────┐
-  │              gen_data.py  (Pipeline Orchestrator)     │
-  │  step_augment: seeds → synthetic variants (NIM)      │
-  │  step_format_jsonl: output LoRA-ready JSONL          │
-  └──────────────────────────┬───────────────────────────┘
-                             │
-                    training_dataset.jsonl
-                             │
-                             ▼
-                  ┌────────────────────┐
-                  │  nemo_finetune/    │
-                  │  train_lora.py     │
-                  │  (QLoRA via TRL)   │
-                  └────────────────────┘
+          │
+          ▼
+   ┌─────────────┐     ┌──────────────┐     ┌──────────────────┐
+   │ drive_loader │────▶│ text_extractor│────▶│  seed_generator  │
+   │  (OAuth2)    │     │ (Unstructured)│     │  (NVIDIA NIM)    │
+   └─────────────┘     └──────────────┘     └────────┬─────────┘
+          │                                          │
+     raw bytes                                    Q&A seeds
+          │                                          │
+          ▼                                          ▼
+   ┌──────────────────────────────────────────────────────┐
+   │              gen_data.py  (Pipeline Orchestrator)     │
+   │  step_augment: seeds → synthetic variants (NIM)      │
+   │  step_format_jsonl: output LoRA-ready JSONL          │
+   └──────────────────────────┬───────────────────────────┘
+                              │
+                     training_dataset.jsonl
+                              │
+                              ▼
+                   ┌────────────────────┐
+                   │  nemo_finetune/    │
+                   │  train_lora.py     │
+                   │  (QLoRA via TRL)   │
+                   └────────────────────┘
+
+Deployment: scripts/brev_deploy.sh → Brev A100 → scripts/brev_pull.sh
 ```
 
 ## Quick Start
@@ -68,21 +70,45 @@ python gen_data.py --mode local --input-dir ./data/
 python gen_data.py --mode augment --seeds seeds.json --variants 5
 ```
 
-### 4. Fine-tune on NVIDIA Server (Slurm)
+### 4. Run on NVIDIA Brev Instance (A100 80GB)
 
 ```bash
-sbatch run_slurm.sh --local /path/to/course/files/
+# 1. Configure SSH target (optional, defaults shown):
+export BREV_SSH_TARGET="ubuntu@global.prd.ga.run.brev.nvidia.com -p 21425"
+export BREV_REMOTE_DIR="~/TradeBuzz-SyntheticData"
+
+# 2. Deploy code to Brev:
+bash scripts/brev_deploy.sh
+
+# 3. Run full pipeline (data generation + training):
+bash scripts/brev_run.sh drive --folder-id <GOOGLE_DRIVE_FOLDER_ID> --variants 3
+
+# Or run from local files:
+bash scripts/brev_run.sh local --variants 3
+
+# 4. Pull results back:
+bash scripts/brev_pull.sh
 ```
 
-### 5. Run LoRA Fine-tuning (after dataset generation)
+**Note:** The Brev instance runs the ENTIRE pipeline (NIM API calls + QLoRA fine-tuning on A100). Your local machine only needs the deploy/run/pull scripts.
+
+### 5. Run LoRA Fine-tuning Only (after dataset generation)
 
 ```bash
+# On Brev instance:
+cd ~/TradeBuzz-SyntheticData/Synthetic_Data_Generation
 python nemo_finetune/train_lora.py \
-  --dataset Synthetic_Data_Generation/output/training_dataset.jsonl \
+  --dataset output/training_dataset.jsonl \
   --base-model nvidia/nemotron-4-7b-instruct \
   --output-dir ./lora_adapter \
   --epochs 3 \
   --batch-size 4
+```
+
+### 6. Dry-Run (verify data without training)
+
+```bash
+python nemo_finetune/train_lora.py --dataset output/training_dataset.jsonl --dry-run
 ```
 
 ## Pipeline Modules
@@ -95,7 +121,10 @@ python nemo_finetune/train_lora.py \
 | `nim_client.py` | Unified NVIDIA NIM API client with retries |
 | `gen_data.py` | Pipeline orchestrator (CLI entry point) |
 | `nemo_finetune/train_lora.py` | QLoRA fine-tuning via HuggingFace TRL |
-| `run_slurm.sh` | Slurm job script for NVIDIA HPC cluster |
+| `scripts/remote_pipeline.sh` | Brev remote runner (installs deps, runs pipeline + training) |
+| `scripts/brev_deploy.sh` | Sync code to Brev instance via rsync/SSH |
+| `scripts/brev_run.sh` | Execute pipeline on Brev |
+| `scripts/brev_pull.sh` | Pull results from Brev |
 | `config.env.example` | Environment variable template |
 
 ## Output Format (LoRA-ready JSONL)
@@ -122,4 +151,8 @@ export NIM_API_KEY="nvapi-..."        # From build.nvidia.com
 export NIM_MODEL="meta/llama-3.1-70b-instruct"
 export GOOGLE_CLIENT_ID="..."          # From Google Cloud Console
 export GOOGLE_CLIENT_SECRET="..."
+
+# Brev deployment (optional, defaults provided):
+export BREV_SSH_TARGET="ubuntu@global.prd.ga.run.brev.nvidia.com -p 21425"
+export BREV_REMOTE_DIR="~/TradeBuzz-SyntheticData"
 ```

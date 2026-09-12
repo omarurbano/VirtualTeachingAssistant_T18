@@ -3,20 +3,16 @@ numpy>=1.24
 requests>=2.31
 python-dotenv>=1.0
 
-# ─── Google Drive API ──────────────────────────────────────────────────────────
-google-api-python-client>=2.100
-google-auth-httplib2>=0.1
-google-auth-oauthlib>=1.1
+# ─── Document Text Extraction ───────────────────────────────────────────────────
+# On Linux/Brev: also install system package `libmagic1`
+#   sudo apt-get update && sudo apt-get install -y libmagic1
+unstructured[all-docs]==0.18.32
 
-# ─── Document Text Extraction ──────────────────────────────────────────────────
-unstructured[all-docs]>=0.12  # includes pdf, docx, pptx, html parsers
-
-# ─── Optional: faster PDF ──────────────────────────────────────────────────────
-# pdfplumber>=0.10  # uncomment if you need table extraction from PDFs
-# pytesseract>=0.3   # uncomment for OCR on scanned PDFs
+# ─── SharePoint / Microsoft Graph API ──────────────────────────────────────────
+msal>=1.25            # Microsoft Authentication Library
 
 # ─── Data & Model Handling ─────────────────────────────────────────────────────
-datasets>=2.14          # HuggingFace Datasets (for LoRA fine-tuning prep)
+datasets>=2.14          # HuggingFace Datasets
 transformers>=4.35      # HuggingFace Transformers
 peft>=0.7               # LoRA / QLoRA adapter library
 bitsandbytes>=0.41      # QLoRA 4-bit quantization

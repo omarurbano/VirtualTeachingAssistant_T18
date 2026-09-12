@@ -5,8 +5,15 @@ from typing import List, Tuple
 import unstructured
 from unstructured.partition.auto import partition
 from unstructured.documents.elements import (
-    NarrativeText, Title, ListItem, Table, Figure, CompositeElement
+    NarrativeText, Title, ListItem, Table, CompositeElement
 )
+try:
+    from unstructured.documents.elements import Figure as _Figure
+except ImportError:
+    try:
+        from unstructured.documents.elements import Image as _Figure
+    except ImportError:
+        _Figure = None
 
 TEXT_MIME_TYPES = {
     "text/plain", "text/markdown", "text/html", "text/csv",
@@ -51,7 +58,7 @@ def _elements_to_text(elements) -> str:
                 parts.append("\n".join(" | ".join(c for c in row) for row in rows))
             else:
                 parts.append(el.text or "")
-        elif isinstance(el, Figure):
+        elif _Figure is not None and isinstance(el, _Figure):
             if el.text:
                 parts.append(f"[Image: {el.text}]")
         elif isinstance(el, CompositeElement):

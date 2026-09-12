@@ -15,6 +15,10 @@ Usage:
   python nemo_finetune/train_lora.py --dataset ... --dry-run
 """
 
+import logging
+log = logging.getLogger("lora_train")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
 import argparse
 import json
 import os
@@ -177,7 +181,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import logging
-    log = logging.getLogger("lora_train")
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     main()

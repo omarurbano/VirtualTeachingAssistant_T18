@@ -1,7 +1,11 @@
+import json
 import os
 import time
 import requests
 from typing import Optional
+
+from dotenv import load_dotenv
+load_dotenv()
 
 NIM_API_BASE = os.getenv("NIM_API_BASE", "https://integrate.api.nvidia.com/v1")
 NIM_API_KEY = os.getenv("NIM_API_KEY", "")

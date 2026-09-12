@@ -5,6 +5,9 @@ import json
 from typing import List, Dict
 from dataclasses import dataclass, field
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from nim_client import NIMClient
 
 

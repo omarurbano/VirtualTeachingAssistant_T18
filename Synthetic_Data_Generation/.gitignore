@@ -17,10 +17,12 @@ credentials.json
 token.json
 *.pem
 *.key
+.sharepoint_token_cache.json
 
 # Data (large files — do not commit raw downloads or generated datasets)
 Synthetic_Data_Generation/output/
 Synthetic_Data_Generation/_raw/
+Synthetic_Data_Generation/lora_adapter/
 *.jsonl
 *.parquet
 
