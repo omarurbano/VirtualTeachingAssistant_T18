@@ -1,4 +1,3 @@
-import hashlib
 import os
 import random
 import json
@@ -9,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from nim_client import NIMClient
+from utils import is_valid, deduplicate, normalize_tags, is_excluded
 
 
 SYSTEM_PROMPT = (
@@ -28,27 +28,6 @@ OUTPUT_SCHEMA_HINT = """[
 ]"""
 
 
-def content_hash(instruction: str, response: str) -> str:
-    return hashlib.sha256((instruction + "||" + response).encode("utf-8")).hexdigest()
-
-
-def deduplicate(records: List[Dict]) -> List[Dict]:
-    seen = set()
-    unique = []
-    for r in records:
-        h = content_hash(r["instruction"], r["response"])
-        if h not in seen:
-            seen.add(h)
-            unique.append(r)
-    return unique
-
-
-def is_valid(record: Dict) -> bool:
-    instr = record.get("instruction", "").strip()
-    resp = record.get("response", "").strip()
-    return len(instr) >= 8 and len(resp) >= 20
-
-
 def generate_seeds_from_chunks(
     nim: NIMClient,
     chunks: List[str],
@@ -57,6 +36,8 @@ def generate_seeds_from_chunks(
 ) -> List[Dict]:
     all_seeds: List[Dict] = []
     for i, chunk in enumerate(chunks):
+        if is_excluded(chunk, source_file):
+            continue
         prompt = (
             f"Source file: {source_file}\n"
             f"Course passage:\n---\n{chunk}\n---\n\n"
@@ -72,7 +53,7 @@ def generate_seeds_from_chunks(
             for item in parsed:
                 item["source_file"] = source_file
                 item["chunk_id"] = i
-                item["tags"] = _extract_tags(chunk, item)
+                item["tags"] = normalize_tags(_extract_tags(chunk, item))
             all_seeds.extend(parsed)
         except Exception as exc:
             print(f"[seed_gen] chunk {i} failed: {exc}")
@@ -83,9 +64,11 @@ def generate_seeds_from_chunks(
 def _safe_parse_json_array(text: str) -> List[Dict]:
     text = text.strip()
     if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        if text.endswith("```"):
-            text = text[:-3]
+        lines = text.split("\n")
+        lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
     try:
         data = json.loads(text)
         return data if isinstance(data, list) else [data]
@@ -99,12 +82,19 @@ def _safe_parse_json_array(text: str) -> List[Dict]:
 
 def _extract_tags(chunk: str, record: Dict) -> List[str]:
     keywords = [
-        "transformer", "attention", "neural network", "gradient", "backprop",
-        "embedding", "tokenizer", "fine-tuning", "inference", "training",
-        "RAG", "retrieval", "vector", "LoRA", "QLoRA", "quantization",
-        "GPU", "CUDA", "tensor", "loss function", "optimizer",
-        "NLP", "computer vision", "CNN", "RNN", "LSTM",
-        "diffusion", "GAN", "reinforcement learning",
+        "dbms", "database", "sql", "query", "table", "relation", "normalization",
+        "key", "primary key", "foreign key", "super key", "candidate key",
+        "entity", "attribute", "relationship", "er model", "erd",
+        "schema", "instance", "integrity", "constraint", "referential integrity",
+        "transaction", "acid", "commit", "rollback", "concurrency",
+        "locking", "deadlock", "index", "view", "trigger", "stored procedure",
+        "nosql", "mongodb", "cassandra", "redis", "document store",
+        "cap theorem", "consistency", "availability", "partition tolerance",
+        "sharding", "replication", "aggregate", "joins", "group by",
+        "having", "subquery", "join", "inner join", "outer join",
+        "erd to table", "relational model", "data independence",
+        "three-level architecture", "anomaly", "functional dependency",
+        "1nf", "2nf", "3nf", "bcnf", "denormalization",
     ]
     chunk_lower = (chunk + " " + record.get("instruction", "")).lower()
     return [kw for kw in keywords if kw.lower() in chunk_lower]

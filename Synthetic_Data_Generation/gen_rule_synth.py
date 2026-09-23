@@ -4,6 +4,9 @@ import json
 import random
 from typing import List, Dict
 
+from utils import is_valid, deduplicate, normalize_tags, is_excluded
+from text_extractor import extract_text_from_bytes, chunk_text
+
 INPUT_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "data", "cpt_s_course_files"
 )
@@ -13,8 +16,6 @@ OUTPUT_PATH = os.path.join(
 
 
 def _read_chunks() -> List[Dict]:
-    from text_extractor import extract_text_from_bytes, chunk_text
-
     docs = []
     for fname in os.listdir(INPUT_DIR):
         fpath = os.path.join(INPUT_DIR, fname)
@@ -57,9 +58,15 @@ def generate(num_variants: int = 3) -> List[Dict]:
     seen = set()
     for chunk in chunks:
         text = chunk["text"]
+        if is_excluded(text, chunk.get("source_file", "")):
+            continue
         for _ in range(num_variants):
             answer = _pick_sentence(text)
+            if not is_valid(answer, answer):
+                continue
             question = _make_question(answer)
+            if is_excluded(question, chunk.get("source_file", "")):
+                continue
             key = question + "||" + answer
             if key in seen:
                 continue

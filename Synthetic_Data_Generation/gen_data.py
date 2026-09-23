@@ -34,13 +34,23 @@ import os
 import sys
 import time
 import random
-import hashlib
 import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
 from dotenv import load_dotenv
 load_dotenv()
+
+from utils import (
+    content_hash,
+    instruction_hash,
+    is_valid,
+    deduplicate,
+    normalize_tags,
+    clean_response,
+    is_excluded,
+)
+from nim_client import NIMClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,16 +74,24 @@ INSTRUCTION_TEMPLATES = [
     "What is the key idea behind: {instruction_lower}",
     "Summarize: {instruction_lower}",
     "Compare and contrast: {instruction_lower}",
+    "Define and explain: {instruction_lower}",
+    "Give an example of: {instruction_lower}",
+    "Why is {instruction_lower} important in databases?",
+    "How does {instruction_lower} work?",
+    "What are the advantages of {instruction_lower}?",
+    "Describe the role of {instruction_lower}",
+    "When would you use {instruction_lower}?",
+    "Explain the difference between {instruction_lower} and related concepts",
+    "What problems does {instruction_lower} solve?",
+    "List the key points about {instruction_lower}",
+    "Provide a brief overview of: {instruction_lower}",
+    "In your own words, {instruction_lower}",
+    "Break down: {instruction_lower}",
+    "Justify why {instruction_lower} matters",
+    "Outline the process of {instruction_lower}",
 ]
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
-
-def content_hash(instruction: str, response: str) -> str:
-    return hashlib.sha256((instruction + "||" + response).encode("utf-8")).hexdigest()
-
-
-def is_valid(instruction: str, response: str) -> bool:
-    return len(instruction.strip()) >= 8 and len(response.strip()) >= 20
 
 
 def augment_instruction(instruction: str) -> str:
@@ -82,17 +100,6 @@ def augment_instruction(instruction: str) -> str:
         instruction=instruction,
         instruction_lower=instruction[0].lower() + instruction[1:],
     )
-
-
-def deduplicate(records: List[Dict]) -> List[Dict]:
-    seen = set()
-    out = []
-    for r in records:
-        h = content_hash(r["instruction"], r["response"])
-        if h not in seen:
-            seen.add(h)
-            out.append(r)
-    return out
 
 
 def write_jsonl(records: List[Dict], filename: str):
@@ -164,18 +171,24 @@ def step_extract(documents: List[Dict]) -> List[Dict]:
 
 
 def step_seed(chunks: List[Dict]) -> List[Dict]:
-    from seed_generator import NIMClient, generate_seeds_from_chunks
+    from seed_generator import generate_seeds_from_chunks
     log.info("Generating seed Q&A pairs via NVIDIA NIM …")
     nim = NIMClient()
-    chunk_texts = [c["text"] for c in chunks]
     source_names = [c["source_file"] for c in chunks]
     unique_sources = list(dict.fromkeys(source_names))
     seeds: List[Dict] = []
-    # Process chunks in batches by source file
-    for src in unique_sources:
-        src_chunks = [c["text"] for c in chunks if c["source_file"] == src]
-        log.info("  Processing source: %s (%d chunks)", src, len(src_chunks))
-        batch = generate_seeds_from_chunks(nim, src_chunks, src, num_q_per_chunk=4)
+    chunks_by_source = {}
+    for c in chunks:
+        chunks_by_source.setdefault(c["source_file"], []).append(c["text"])
+    interleaved = []
+    max_len = max((len(v) for v in chunks_by_source.values()), default=0)
+    for i in range(max_len):
+        for src in unique_sources:
+            if i < len(chunks_by_source.get(src, [])):
+                interleaved.append((src, chunks_by_source[src][i]))
+    for src, chunk_text in interleaved:
+        log.info("  Processing source: %s", src)
+        batch = generate_seeds_from_chunks(nim, [chunk_text], src, num_q_per_chunk=4)
         seeds.extend(batch)
         time.sleep(0.5)
     seeds = deduplicate(seeds)
@@ -185,7 +198,6 @@ def step_seed(chunks: List[Dict]) -> List[Dict]:
 
 
 def step_augment(seeds: List[Dict], num_variants: int = 3) -> List[Dict]:
-    from nim_client import NIMClient
     log.info("Augmenting %d seeds × %d variants via NVIDIA NIM …", len(seeds), num_variants)
     nim = NIMClient()
 
@@ -202,7 +214,11 @@ Original answer: {original_response}"""
     for seed in seeds:
         base_instr = seed["instruction"]
         base_resp = seed["response"]
-        tags = seed.get("tags", [])
+        tags = normalize_tags(seed.get("tags", []))
+        source_file = seed.get("source_file", "")
+        cognitive_level = seed.get("cognitive_level", "")
+        if is_excluded(base_instr, source_file):
+            continue
         for _ in range(num_variants):
             new_instr = augment_instruction(base_instr)
             prompt = rewrite_prompt.format(
@@ -213,14 +229,17 @@ Original answer: {original_response}"""
             except Exception as exc:
                 log.warning("  NIM call failed: %s", exc)
                 continue
+            new_resp = clean_response(new_resp)
             if not is_valid(new_instr, new_resp):
+                continue
+            if is_excluded(new_instr, source_file):
                 continue
             synthetic.append({
                 "instruction": new_instr,
                 "response": new_resp,
                 "tags": tags,
-                "source_file": seed.get("source_file", ""),
-                "cognitive_level": seed.get("cognitive_level", ""),
+                "source_file": source_file,
+                "cognitive_level": cognitive_level,
             })
             done += 1
             if done % 50 == 0:
@@ -235,21 +254,20 @@ Original answer: {original_response}"""
 def step_merge_and_validate(seeds: List[Dict], synthetic: List[Dict]) -> List[Dict]:
     log.info("Merging seeds + synthetic and validating …")
     combined = seeds + synthetic
-    combined = deduplicate(combined)
+    combined = deduplicate(combined, key_fn=lambda r: instruction_hash(r.get("instruction", "")))
     combined = [r for r in combined if is_valid(r["instruction"], r["response"])]
     log.info("Final dataset size: %d", len(combined))
     return combined
 
 
 def step_format_jsonl(records: List[Dict], filename: str = "training_dataset.jsonl"):
-    import time as _time
     formatted = []
     for r in records:
         formatted.append({
             "instruction": r["instruction"],
             "input": "",
             "output": r["response"],
-            "tags": r.get("tags", []),
+            "tags": normalize_tags(r.get("tags", [])),
             "source_file": r.get("source_file", ""),
             "cognitive_level": r.get("cognitive_level", ""),
         })
