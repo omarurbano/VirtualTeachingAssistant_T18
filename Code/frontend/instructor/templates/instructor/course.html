@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VTA // Course — CPTS_451</title>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <title>VTA · Course — CPTS_451</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/instructor.css') }}" />
 </head>
@@ -14,7 +14,8 @@
 <header class="top-bar">
   <div class="top-bar-left">
     <a href="/instructor/dashboard" class="back-link">
-      <span class="prompt">$</span> cd ../dashboard
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      Back to dashboard
     </a>
     <span class="top-bar-sep">/</span>
     <span class="top-bar-course-name" id="courseNameDisplay">Loading...</span>
@@ -22,7 +23,7 @@
   </div>
   <div class="top-bar-right">
     <span class="welcome-text">Welcome, <span class="accent" id="teacherNameDisplay">Teacher</span></span>
-    <a href="#" class="btn-term btn-term-outline">$ logout</a>
+    <a href="#" class="btn-term btn-term-outline">Log out</a>
   </div>
   <!-- Debug info -->
   <div id="debugInfo" style="display:none;"></div>
@@ -33,9 +34,9 @@
 
   <!-- ░░ TAB NAV ░░ -->
   <nav class="term-tabs" id="courseTabs">
-    <button class="term-tab active" data-tab="materials">$ materials</button>
-    <button class="term-tab"        data-tab="students">$ students</button>
-    <button class="term-tab"        data-tab="settings">$ settings</button>
+    <button class="term-tab active" data-tab="materials">Materials</button>
+    <button class="term-tab"        data-tab="students">Students</button>
+    <button class="term-tab"        data-tab="settings">Settings</button>
   </nav>
 
   <!-- ════════════════════════════════════════════════
@@ -44,8 +45,7 @@
   <section class="tab-panel active" id="tab-materials">
 
     <div class="section-header">
-      <span class="prompt">$</span> ls -lh ./materials/<span id="materialsCourseCode">---</span>/
-      <span class="cursor-blink">█</span>
+      Course materials <span class="accent" id="materialsCourseCode">---</span>
     </div>
 
     <!-- Materials table -->
@@ -70,14 +70,14 @@
     <!-- Upload panel -->
     <div class="upload-section">
       <div class="upload-section-title">
-        <span class="prompt">$</span> upload --embed ./new_file
+        Upload a material
       </div>
 
       <div class="upload-form">
         <div class="upload-row">
           <div class="upload-field upload-field-file">
             <label class="term-label">
-              <span class="prompt">$</span> select_file:
+              File
             </label>
             <div class="file-input-wrap">
               <input type="file" id="fileUpload" class="file-input-hidden" accept=".pdf,.docx,.pptx,.txt,.md" />
@@ -89,7 +89,7 @@
 
           <div class="upload-field upload-field-type">
             <label class="term-label" for="fileType">
-              <span class="prompt">$</span> material_type:
+              Material type
             </label>
             <select id="fileType" class="term-select">
               <option value="">-- select type --</option>
@@ -104,7 +104,7 @@
 
         <div class="upload-actions">
           <button class="btn-term btn-term-primary" id="uploadBtn">
-            $ upload &amp; embed
+            Upload &amp; embed
           </button>
         </div>
 
@@ -114,34 +114,34 @@
       <!-- Drive link section -->
       <div class="drive-section">
         <div class="drive-section-title">
-          <span class="prompt">$</span> link --source google_drive
+          Google Drive
         </div>
-        <div class="drive-comment">// grant OAuth access to your Drive folder</div>
+        <div class="drive-comment">Grant access to a Google Drive folder to import its contents.</div>
 
         <div class="drive-row">
           <input type="url" id="driveLink" class="term-input" placeholder="https://drive.google.com/drive/folders/..." />
           <button class="btn-term btn-term-primary" id="driveLinkBtn">
-            $ link drive folder
+            Link Drive folder
           </button>
         </div>
-        
+
         <!-- Sync from Drive Button -->
         <div class="drive-sync-row">
           <button class="btn-term btn-term-outline" id="syncDriveBtn">
-            $ sync from drive
+            Sync from Drive
           </button>
-          <span class="drive-sync-comment">// import files from linked Google Drive folder</span>
+          <span class="drive-sync-comment">Import files from the linked Google Drive folder</span>
         </div>
-        
+
         <!-- File Selection Area (hidden by default) -->
         <div id="driveFilesSection" class="drive-files-section" style="display:none;">
           <div class="drive-section-title">
-            <span class="prompt">$</span> select files to import:
+            Select files to import
           </div>
           <div id="driveFilesList" class="drive-files-list"></div>
           <div class="drive-sync-actions">
             <button class="btn-term btn-term-primary" id="importSelectedBtn">
-              $ import selected
+              Import selected
             </button>
           </div>
         </div>
@@ -159,13 +159,12 @@
   <section class="tab-panel" id="tab-students">
 
     <div class="section-header">
-      <span class="prompt">$</span> cat ./students/<span id="studentsCourseCode">---</span>/roster.csv
-      <span class="cursor-blink">█</span>
+      Roster <span class="accent" id="studentsCourseCode">---</span>
     </div>
 
     <div class="students-toolbar">
-      <div class="students-comment">// analytics are de-identified by default</div>
-      <button class="btn-term btn-term-outline" id="exportBtn">$ export list</button>
+      <div class="students-comment">Analytics are de-identified by default</div>
+      <button class="btn-term btn-term-outline" id="exportBtn">Export list</button>
     </div>
 
     <div class="term-table-wrap">
@@ -199,8 +198,7 @@
   <section class="tab-panel" id="tab-settings">
 
     <div class="section-header">
-      <span class="prompt">$</span> nano ./config/<span id="settingsCourseCode">---</span>.conf
-      <span class="cursor-blink">█</span>
+      Course settings <span class="accent" id="settingsCourseCode">---</span>
     </div>
 
     <div class="settings-grid">
@@ -208,15 +206,15 @@
       <!-- Course name -->
       <div class="settings-block">
         <div class="settings-block-title">
-          <span class="prompt">$</span> course_name
+          Course name
         </div>
         <div class="settings-block-body">
           <label class="term-label" for="settingCourseName">
-            <span class="prompt">$</span> edit value:
+            Value
           </label>
           <div class="settings-input-row">
             <input type="text" id="settingCourseName" class="term-input" value="" />
-            <button class="btn-term btn-term-primary" id="saveNameBtn">$ save</button>
+            <button class="btn-term btn-term-primary" id="saveNameBtn">Save</button>
           </div>
           <div id="saveNameFeedback" class="upload-feedback" style="display:none;"></div>
         </div>
@@ -225,15 +223,15 @@
       <!-- Class code -->
       <div class="settings-block">
         <div class="settings-block-title">
-          <span class="prompt">$</span> class_code
+          Class code
         </div>
         <div class="settings-block-body">
           <label class="term-label">
-            <span class="prompt">$</span> current value: <span class="settings-comment">// read-only</span>
+            Current value <span class="settings-comment">read-only</span>
           </label>
           <div class="settings-input-row">
             <input type="text" id="settingClassCode" class="term-input term-input-readonly" value="" readonly />
-            <button class="btn-term btn-term-outline" id="regenCodeBtn">$ regenerate code</button>
+            <button class="btn-term btn-term-outline" id="regenCodeBtn">Regenerate code</button>
           </div>
           <div id="regenFeedback" class="upload-feedback" style="display:none;"></div>
         </div>
@@ -242,14 +240,14 @@
       <!-- Archive toggle -->
       <div class="settings-block settings-block-danger">
         <div class="settings-block-title danger-title">
-          <span class="danger-prompt">!</span> danger_zone
+          <span class="danger-prompt">!</span> Danger zone
         </div>
         <div class="settings-block-body">
           <div class="archive-row">
             <div class="archive-info">
-              <div class="archive-label">$ archive_course</div>
+              <div class="archive-label">Archive course</div>
               <div class="archive-desc">
-                // students lose access. materials are preserved. action is reversible.
+                Students lose access. Materials are preserved. Action is reversible.
               </div>
             </div>
             <label class="toggle-switch" aria-label="Archive course">
@@ -295,7 +293,7 @@
   if (debugInfo) {
     debugInfo.style.display = 'block';
     debugInfo.textContent = `Course ID from URL: "${courseId}"`;
-    debugInfo.style.cssText = 'position:fixed; bottom:10px; right:10px; background:#fff; color:#000; padding:10px; z-index:9999; font-size:12px;';
+    debugInfo.style.cssText = 'position:fixed; bottom:10px; right:10px; background:#101828; color:#98a2b3; padding:6px 10px; border-radius:8px; z-index:9999; font-size:11px; opacity:.85;';
   }
   
   console.log('Course page loaded, courseId:', courseId);
@@ -454,7 +452,7 @@
     const fb   = document.getElementById('uploadFeedback');
 
     if (!file || !type) {
-      showFeedback(fb, '> ERROR: select a file and material type.', 'error');
+      showFeedback(fb, 'ERROR: select a file and material type.', 'error');
       return;
     }
 
@@ -464,7 +462,7 @@
       formData.append('material_type', type);
       formData.append('course_id', courseId);
 
-      showFeedback(fb, `> Uploading "${file.name}"...`, 'loading');
+      showFeedback(fb, `Uploading "${file.name}"...`, 'loading');
 
       // Use existing /api/upload endpoint with course context
       const response = await fetch('/api/upload', {
@@ -475,16 +473,16 @@
       const data = await response.json();
 
       if (data.success) {
-        showFeedback(fb, `> "${file.name}" uploaded and embedded successfully!`, 'success');
+        showFeedback(fb, `"${file.name}" uploaded and embedded successfully!`, 'success');
         
         // Refresh materials list
         loadMaterials(courseId);
       } else {
-        showFeedback(fb, '> ERROR: ' + (data.error || 'Upload failed'), 'error');
+        showFeedback(fb, 'ERROR: ' + (data.error || 'Upload failed'), 'error');
       }
     } catch (error) {
       console.error('Upload error:', error);
-      showFeedback(fb, '> ERROR: ' + error.message, 'error');
+      showFeedback(fb, 'ERROR: ' + error.message, 'error');
     }
 
     document.getElementById('fileInputText').textContent = 'choose file...';
@@ -577,16 +575,16 @@
     const fb   = document.getElementById('driveFeedback');
 
     if (!link) {
-      showFeedback(fb, '> ERROR: paste a Google Drive folder URL.', 'error');
+      showFeedback(fb, 'ERROR: paste a Google Drive folder URL.', 'error');
       return;
     }
     if (!link.includes('drive.google.com') && !link.includes('docs.google.com')) {
-      showFeedback(fb, '> ERROR: URL does not appear to be a Google Drive link.', 'error');
+      showFeedback(fb, 'ERROR: URL does not appear to be a Google Drive link.', 'error');
       return;
     }
 
     try {
-      showFeedback(fb, '> Connecting to Google Drive...', 'info');
+      showFeedback(fb, 'Connecting to Google Drive...', 'info');
       
       const response = await fetch('/drive/connect', {
         method: 'POST',
@@ -600,16 +598,16 @@
       const data = await response.json();
       
       if (response.ok && data.success) {
-        showFeedback(fb, `> ✓ Drive connected! Folder ID: ${data.folder_id}`, 'success');
+        showFeedback(fb, `✓ Drive connected! Folder ID: ${data.folder_id}`, 'success');
         document.getElementById('driveLink').value = '';
         
         // Refresh materials list
         loadMaterials();
       } else {
-        showFeedback(fb, `> ERROR: ${data.error || 'Failed to connect Drive'}`, 'error');
+        showFeedback(fb, `ERROR: ${data.error || 'Failed to connect Drive'}`, 'error');
       }
     } catch (error) {
-      showFeedback(fb, '> ERROR: Failed to connect Drive', 'error');
+      showFeedback(fb, 'ERROR: Failed to connect Drive', 'error');
     }
   });
 
@@ -620,20 +618,20 @@
     const filesList = document.getElementById('driveFilesList');
     
     try {
-      showFeedback(fb, '> Fetching files from Google Drive...', 'info');
+      showFeedback(fb, 'Fetching files from Google Drive...', 'info');
       
       const response = await fetch(`/drive/files/${courseId}`);
       const data = await response.json();
       
       if (data.needs_auth) {
         // Need OAuth - redirect to auth
-        showFeedback(fb, '> Redirecting to Google for authorization...', 'info');
+        showFeedback(fb, 'Redirecting to Google for authorization...', 'info');
         window.location.href = data.auth_url;
         return;
       }
       
       if (data.error) {
-        showFeedback(fb, '> ERROR: ' + data.error, 'error');
+        showFeedback(fb, 'ERROR: ' + data.error, 'error');
         return;
       }
       
@@ -647,7 +645,7 @@
         const audCount = data.counts?.audio || data.audio?.length || 0;
         const totalCount = data.counts?.total || files.length;
         
-        showFeedback(fb, `> Found ${totalCount} files (${docCount} docs, ${vidCount} videos, ${audCount} audio)`, 'success');
+        showFeedback(fb, `Found ${totalCount} files (${docCount} docs, ${vidCount} videos, ${audCount} audio)`, 'success');
         
         // Show files section
         filesSection.style.display = 'block';
@@ -695,13 +693,13 @@
           filesList.appendChild(fileItem);
         });
       } else if (data.note) {
-        showFeedback(fb, `> ${data.note}`, 'info');
+        showFeedback(fb, `${data.note}`, 'info');
       } else {
-        showFeedback(fb, '> ERROR: No supported files found in folder', 'error');
+        showFeedback(fb, 'ERROR: No supported files found in folder', 'error');
       }
     } catch (error) {
       console.error('Sync error:', error);
-      showFeedback(fb, '> ERROR: ' + error.message, 'error');
+      showFeedback(fb, 'ERROR: ' + error.message, 'error');
     }
   });
 
@@ -711,7 +709,7 @@
     const checkboxes = document.querySelectorAll('.drive-file-checkbox:checked');
     
     if (checkboxes.length === 0) {
-      showFeedback(fb, '> ERROR: Select at least one file', 'error');
+      showFeedback(fb, 'ERROR: Select at least one file', 'error');
       return;
     }
     
@@ -723,7 +721,7 @@
     }));
     
     try {
-      showFeedback(fb, `> Importing ${fileData.length} files... This may take a while.`, 'info');
+      showFeedback(fb, `Importing ${fileData.length} files... This may take a while.`, 'info');
       
       const response = await fetch('/drive/sync', {
         method: 'POST',
@@ -737,17 +735,17 @@
       const data = await response.json();
       
       if (response.ok && data.success) {
-        showFeedback(fb, `> ✓ Successfully imported ${data.imported_count} files!`, 'success');
+        showFeedback(fb, `✓ Successfully imported ${data.imported_count} files!`, 'success');
         // Hide files section
         document.getElementById('driveFilesSection').style.display = 'none';
         // Refresh materials
         loadMaterials(courseId);
       } else {
-        showFeedback(fb, `> ERROR: ${data.error || 'Import failed'}`, 'error');
+        showFeedback(fb, `ERROR: ${data.error || 'Import failed'}`, 'error');
       }
     } catch (error) {
       console.error('Import error:', error);
-      showFeedback(fb, '> ERROR: ' + error.message, 'error');
+      showFeedback(fb, 'ERROR: ' + error.message, 'error');
     }
   });
 
@@ -792,12 +790,12 @@
     const fb  = document.getElementById('saveNameFeedback');
     
     if (!val) {
-      showFeedback(fb, '> ERROR: course name cannot be empty.', 'error');
+      showFeedback(fb, 'ERROR: course name cannot be empty.', 'error');
       return;
     }
     
     if (!courseId) {
-      showFeedback(fb, '> ERROR: No course selected.', 'error');
+      showFeedback(fb, 'ERROR: No course selected.', 'error');
       return;
     }
     
@@ -811,13 +809,13 @@
       const data = await response.json();
       
       if (response.ok && data.success) {
-        showFeedback(fb, `> course_name updated to "${val}". Changes saved.`, 'success');
+        showFeedback(fb, `course_name updated to "${val}". Changes saved.`, 'success');
       } else {
-        showFeedback(fb, '> ERROR: ' + (data.error || 'Failed to save'), 'error');
+        showFeedback(fb, 'ERROR: ' + (data.error || 'Failed to save'), 'error');
       }
     } catch (error) {
       console.error('Save error:', error);
-      showFeedback(fb, '> ERROR: ' + error.message, 'error');
+      showFeedback(fb, 'ERROR: ' + error.message, 'error');
     }
   });
 
@@ -826,7 +824,7 @@
     const fb = document.getElementById('regenFeedback');
     
     if (!courseId) {
-      showFeedback(fb, '> ERROR: No course selected.', 'error');
+      showFeedback(fb, 'ERROR: No course selected.', 'error');
       return;
     }
     
@@ -839,13 +837,13 @@
       
       if (response.ok && data.success) {
         document.getElementById('settingClassCode').value = data.code;
-        showFeedback(fb, `> New class code generated: ${data.code}. Share with students.`, 'success');
+        showFeedback(fb, `New class code generated: ${data.code}. Share with students.`, 'success');
       } else {
-        showFeedback(fb, '> ERROR: ' + (data.error || 'Failed to regenerate'), 'error');
+        showFeedback(fb, 'ERROR: ' + (data.error || 'Failed to regenerate'), 'error');
       }
     } catch (error) {
       console.error('Regenerate error:', error);
-      showFeedback(fb, '> ERROR: ' + error.message, 'error');
+      showFeedback(fb, 'ERROR: ' + error.message, 'error');
     }
   });
 
@@ -855,7 +853,7 @@
     const archived = this.checked;
     
     if (!courseId) {
-      showFeedback(fb, '> ERROR: No course selected.', 'error');
+      showFeedback(fb, 'ERROR: No course selected.', 'error');
       return;
     }
     
@@ -870,20 +868,20 @@
       
       if (response.ok && data.success) {
         if (archived) {
-          showFeedback(fb, '> Course archived. Students no longer have access.', 'warning');
+          showFeedback(fb, 'Course archived. Students no longer have access.', 'warning');
         } else {
-          showFeedback(fb, '> Course restored. Student access re-enabled.', 'success');
+          showFeedback(fb, 'Course restored. Student access re-enabled.', 'success');
         }
       } else {
-        showFeedback(fb, '> ERROR: ' + (data.error || 'Failed'), 'error');
+        showFeedback(fb, 'ERROR: ' + (data.error || 'Failed'), 'error');
       }
     } catch (error) {
       console.error('Archive error:', error);
       // Fallback message for demo
       if (archived) {
-        showFeedback(fb, '> Course archived. Students no longer have access.', 'warning');
+        showFeedback(fb, 'Course archived. Students no longer have access.', 'warning');
       } else {
-        showFeedback(fb, '> Course restored. Student access re-enabled.', 'success');
+        showFeedback(fb, 'Course restored. Student access re-enabled.', 'success');
       }
     }
   });
@@ -899,7 +897,7 @@
 <!-- Logout Handler -->
 <script>
   document.querySelectorAll('a[href="#"]').forEach(link => {
-    if (link.textContent.includes('logout')) {
+    if (link.textContent.toLowerCase().includes('log out') || link.textContent.toLowerCase().includes('logout')) {
       link.addEventListener('click', async (e) => {
         e.preventDefault();
         try {

@@ -3,86 +3,185 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard · VTA</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
-    <title>Student View</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
-    <div class="app-container">
-         <!-- Header -->
-         <header class="app-header">
-            <!-- makes the offcanvas btn visible -->
-            <div class="navbar navbar-light"> 
-                <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasDarkNavbar" aria-controls="offcanvasDarkNavbar" aria-label="Toggle navigation">
-                    <!-- <span class="navbar-toggler-icon"></span> -->
-                    <div class="logo"></div>
-                </button>
-                <div class="offcanvas offcanvas-start text-bg-dark" tabindex="-1" id="offcanvasDarkNavbar" aria-labelledby="offcanvasDarkNavbarLabel">
-                    <div class="offcanvas-header">
-                        <h5 class="offcanvas-title" id="offcanvasDarkNavbarLabel">Courses</h5>
-                        <button type="button" class="btn-close btn-close-info" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-                    </div>
-                    <div class="offcanvas-body">
-                        <ul id="studentCourses" class="list-group list-group-flush list-group-item-dark gap-2">
-                            <li class="text-info-subtle">No Courses available</li>
-                        </ul>
-                    </div>
-                </div>
-                
-            </div>
-            <div class="d-flex justify-content-end gap-4">
-                <h1 id="userWelcome" class="align-self-end text-info">Welcome, User</h1>
-                <button class="btn btn-outline-info" id="logoutBtn">Logout</button>
-            </div>
-        </header>
+    <div class="dash-page">
+        <div class="dash-container">
 
-        <div class="d-flex justify-content-center my-5">
-            <div class="card my-10 border-info" style="width: 18rem;">
-                <img src="https://ascc.wsu.edu/wp-content/uploads/sites/157/2026/04/stockbook.jpg" class="card-img-top" alt="Stack of Books">
-                <div class="card-body bg-dark text-bg-dark">
-                  <h5 class="card-title">Add Course</h5>
-                  <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#addCourseModal">+</button>
+            <!-- ══ HEADER ══════════════════════════════════════════ -->
+            <header class="dash-header-row">
+                <div>
+                    <div class="eyebrow">Dashboard</div>
+                    <h1 class="dash-title" id="dashGreeting">Good morning, <span class="accent" id="greetingName">Student</span> 👋</h1>
+                    <p class="dash-sub">Here's everything happening in your learning universe.</p>
                 </div>
-              </div>
-        </div>
-        <!-- Modal -->
-        <div class="modal fade" id="addCourseModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content bg-dark text-bg-dark">
-                    <div class="modal-header border-dark">
-                        <h1 class="modal-title fs-3" id="exampleModalLabel">Add Course</h1>
-                        <button id="modalclosebtn" type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="dash-actions">
+                    <div class="dash-user-chip">
+                        <span class="avatar" id="userAvatar">S</span>
+                        <span class="chip-name" id="userChipName">Student</span>
                     </div>
-                    <div class="modal-body">
-                        <form id="addCourseForm">
-                            <div class="mb-4">
-                                <label for="courseCode" class="form-label text-info">Enter Course Code</label>
-                                <input type="text" class="form-control bg-dark text-white border-info-subtle" id="courseCode" placeholder="course code">
+                    <button class="btn btn-ghost" id="logoutBtn">Log out</button>
+                </div>
+            </header>
+
+            <!-- ══ STAT CARDS ══════════════════════════════════════ -->
+            <section class="stat-grid" aria-label="Learning summary">
+                <article class="stat-card">
+                    <div class="icon-tile" aria-hidden="true">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                        </svg>
+                    </div>
+                    <div class="stat-trend" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                            <polyline points="16 7 22 7 22 13"/>
+                        </svg>
+                    </div>
+                    <div class="stat-value" id="statClasses">0</div>
+                    <div class="stat-label">Classes joined</div>
+                    <div class="stat-hint">enrolled classrooms</div>
+                </article>
+
+                <article class="stat-card">
+                    <div class="icon-tile violet" aria-hidden="true">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <path d="M9 13h6M9 17h4"/>
+                        </svg>
+                    </div>
+                    <div class="stat-trend" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                            <polyline points="16 7 22 7 22 13"/>
+                        </svg>
+                    </div>
+                    <div class="stat-value" id="statMaterials">0</div>
+                    <div class="stat-label">Total materials</div>
+                    <div class="stat-hint">documents available</div>
+                </article>
+
+                <article class="stat-card">
+                    <div class="icon-tile green" aria-hidden="true">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </div>
+                    <div class="stat-trend" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                            <polyline points="16 7 22 7 22 13"/>
+                        </svg>
+                    </div>
+                    <div class="stat-value" id="statQuestions">0</div>
+                    <div class="stat-label">Questions asked</div>
+                    <div class="stat-hint">with the AI assistant</div>
+                </article>
+            </section>
+
+            <!-- ══ LEARNING ANALYTICS ══════════════════════════════ -->
+            <section aria-labelledby="analyticsHeading">
+                <div class="dash-header-row" style="margin-top: 36px;">
+                    <div>
+                        <h2 class="section-title" id="analyticsHeading">Learning Analytics</h2>
+                        <p class="section-sub">AI-powered insights from your study sessions</p>
+                    </div>
+                </div>
+
+                <div class="card-surface analytics-card">
+                    <div class="chart-wrap" id="analyticsChartWrap" hidden>
+                        <canvas id="analyticsChart" aria-label="Questions asked per day"></canvas>
+                    </div>
+
+                    <div class="empty-state" id="analyticsEmpty">
+                        <div class="empty-state-icon" aria-hidden="true">
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 3v18h18"/>
+                                <path d="M7 15l4-5 3 3 5-7"/>
+                            </svg>
+                        </div>
+                        <div class="empty-state-title">No Data Points Recorded</div>
+                        <p class="empty-state-text">Personal analytics are generated after you ask questions in your classrooms. Start learning to see your patterns here.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══ CLASSROOMS + JOIN ═══════════════════════════════ -->
+            <div class="dash-columns">
+
+                <section aria-labelledby="classroomsHeading">
+                    <h2 class="section-title" id="classroomsHeading">Your Classrooms</h2>
+                    <p class="section-sub">Click a class to enter and start learning</p>
+
+                    <div class="classroom-grid" id="classroomGrid"></div>
+
+                    <div class="dashed-panel" id="classroomsEmpty">
+                        <div class="empty-state">
+                            <div class="empty-state-icon" aria-hidden="true">
+                                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                                    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                                </svg>
                             </div>
-                            <button type="submit" class="btn btn-outline-info">Submit</button>
+                            <div class="empty-state-title">No Classrooms Yet</div>
+                            <p class="empty-state-text">Enter a class code from your teacher in the Join a Class panel to join your first classroom.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <aside>
+                    <div class="card-surface join-card">
+                        <div class="join-card-head">
+                            <span class="icon-tile" aria-hidden="true" style="width: 32px; height: 32px; border-radius: 9px;">
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                                    <path d="M12 5v14M5 12h14"/>
+                                </svg>
+                            </span>
+                            Join a Class
+                        </div>
+
+                        <form id="joinClassForm" autocomplete="off">
+                            <label class="input-label" for="joinClassCode" style="margin-top: 18px;">Enter code</label>
+                            <div class="input-shell">
+                                <input
+                                    type="text"
+                                    id="joinClassCode"
+                                    placeholder="E. G. A1B2C3"
+                                    maxlength="12"
+                                >
+                            </div>
+                            <button type="submit" class="btn btn-primary join-btn" id="joinClassBtn">
+                                Join Now
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M5 12h14M13 6l6 6-6 6"/>
+                                </svg>
+                            </button>
                         </form>
                     </div>
-                </div>
-            </div>
-        </div>
+                </aside>
 
-        <!-- Toast -->
-        <div class="toast-container position-fixed bottom-0 end-0 p-3">
-            <div id="myToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-                <div class="toast-header bg-dark border-dark">
-                    <div class="logo rounded me-2"></div>
-                    <strong class="me-auto text-white">Message</strong>
-                    <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-                </div>
-                <div class="toast-body bg-dark text-info">
-                    <label id="toastmsg">Hello, world! This is a toast message.</label>
-                </div>
             </div>
-        </div>
 
+            <div class="dash-back">
+                <a class="back-link" href="/">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m15 18-6-6 6-6"/>
+                    </svg>
+                    Back to home
+                </a>
+            </div>
+
+        </div>
     </div>
-    
+
+    <!-- Toasts -->
+    <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="/static/studentHome.js"></script>
 </body>
-<script src="/static/studentHome.js"></script>
 </html>

@@ -403,7 +403,7 @@ async function clearAllDocuments() {
         if (data.success) {
             uploadedFiles = [];
             updateFilesBar();
-            addMessage('ai', '> all documents cleared. upload new files to continue.');
+            addMessage('ai', 'All documents cleared. Upload new files to continue.');
         }
     } catch (error) {
         console.error('Failed to clear:', error);
@@ -411,14 +411,14 @@ async function clearAllDocuments() {
 }
 
 function showWelcomeMessage() {
-    addMessage('ai', `> welcome to CPT_S 421 VTA Document RAG
+    addMessage('ai', `Welcome to the VTA Document Assistant.
 
-supported operations:
-  - upload: PDF, DOCX, TXT, Images, Audio (MP3, WAV, M4A, OGG, FLAC...)
-  - query: ask questions about document content
-  - citations: sources shown with page numbers, timestamps, speakers
+Supported operations:
+  - Upload: PDF, DOCX, TXT, Images, Audio (MP3, WAV, M4A, OGG, FLAC...)
+  - Query: ask questions about document content
+  - Citations: sources shown with page numbers, timestamps, speakers
 
-type your question below and press enter.`);
+Type your question below and press enter.`);
 }
 
 async function sendMessage() {
@@ -476,32 +476,39 @@ async function sendMessage() {
             // Show course context in system message if available
             if (courseId && !window.courseContextShown) {
                 window.courseContextShown = true;
-                addMessage('system', `> Answering from course: ${courseId}`);
+                addMessage('system', `Answering from course: ${courseId}`);
             }
         } else {
-            addMessage('ai', `> error: ${data.error}`);
+            addMessage('ai', `Error: ${data.error}`);
         }
     } catch (error) {
         loadingIndicator.classList.remove('active');
-        addMessage('ai', `> error: ${error.message}`);
+        addMessage('ai', `Error: ${error.message}`);
     }
     
     isProcessing = false;
     messageInput.focus();
 }
 
+const AVATAR_ICONS = {
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>',
+    system: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>'
+};
+
+function messageAvatar(type) {
+    return `<div class="message-avatar" aria-hidden="true">${AVATAR_ICONS[type] || AVATAR_ICONS.ai}</div>`;
+}
+
 function addMessage(type, content) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
-    
-    const prompt = type === 'user' ? 'you@localhost' : 'vta@rag';
-    const promptClass = type === 'user' ? 'var(--accent-tertiary)' : 'var(--accent-secondary)';
-    
+
     messageDiv.innerHTML = `
-        <div class="message-prompt" style="color: ${promptClass}">${prompt}$</div>
+        ${messageAvatar(type)}
         <div class="message-content">${escapeHtml(content)}</div>
     `;
-    
+
     messagesContainer.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -606,15 +613,12 @@ function renderAudioCitation(citation, index, scorePercent) {
 function addMessageWithCitations(type, content, citations = []) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
-    
-    const prompt = type === 'user' ? 'you@localhost' : 'vta@rag';
-    const promptClass = type === 'user' ? 'var(--accent-tertiary)' : 'var(--accent-secondary)';
-    
+
     let html = escapeHtml(content);
-    
+
     if (citations && citations.length > 0) {
         html += '<div class="citations-container">';
-        html += '<div class="citations-label">// sources:</div>';
+        html += '<div class="citations-label">Sources</div>';
         
         citations.forEach((citation, index) => {
             const scorePercent = (citation.similarity_score * 100).toFixed(0);
@@ -656,7 +660,7 @@ function addMessageWithCitations(type, content, citations = []) {
     }
     
     messageDiv.innerHTML = `
-        <div class="message-prompt" style="color: ${promptClass}">${prompt}$</div>
+        ${messageAvatar(type)}
         <div class="message-content">${html}</div>
     `;
     
@@ -714,22 +718,9 @@ function openMediaPlayer(sourceUrl) {
 
 function showToast(message) {
     const toast = document.createElement('div');
-    toast.style.cssText = `
-        position: fixed;
-        bottom: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: var(--bg-elevated);
-        border: 1px solid var(--accent-primary);
-        color: var(--accent-primary);
-        padding: 10px 20px;
-        border-radius: 4px;
-        font-family: var(--font-mono);
-        font-size: 0.8rem;
-        z-index: 1000;
-        animation: fadeIn 0.2s ease;
-    `;
-    toast.textContent = `> ${message}`;
+    toast.className = 'chat-toast';
+    toast.setAttribute('role', 'status');
+    toast.textContent = message;
     document.body.appendChild(toast);
 
     setTimeout(() => {

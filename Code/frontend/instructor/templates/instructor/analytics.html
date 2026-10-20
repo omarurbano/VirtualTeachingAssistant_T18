@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VTA // Analytics</title>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <title>VTA · Analytics</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/instructor.css') }}" />
 </head>
@@ -14,28 +14,28 @@
 <header class="top-bar">
   <div class="top-bar-left">
     <a href="#" class="back-link" id="backLink">
-      <span class="prompt">$</span> cd ../course
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      Back to course
     </a>
     <span class="top-bar-sep">/</span>
     <span class="top-bar-course-name">
-      <span class="accent">&gt;</span> analytics <span class="top-bar-sep">::</span> <span id="analyticsCourseCode">---</span>
+      Analytics <span class="top-bar-sep">·</span> <span id="analyticsCourseCode">---</span>
     </span>
   </div>
   <div class="top-bar-right">
     <span class="welcome-text">Welcome, <span class="accent" id="teacherNameDisplay">Teacher</span></span>
-    <a href="#" class="btn-term btn-term-outline">$ logout</a>
+    <a href="#" class="btn-term btn-term-outline">Log out</a>
   </div>
 </header>
 
 <!-- ░░ ANALYTICS PAGE WRAPPER ░░ -->
 <div class="analytics-page">
 
-  <!-- ══════════════════════════════════════════════════════════
+  <!-- ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
        SECTION 1 — COURSE OVERVIEW BAR (full width)
-  ══════════════════════════════════════════════════════════ -->
+  ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ -->
   <div class="analytics-overview">
     <div class="overview-bar">
-      <span class="overview-prompt">&gt;</span>
       <span class="overview-item overview-course">CPTS_451</span>
       <span class="overview-divider">|</span>
       <span class="overview-item"><span class="overview-val">34</span> students</span>
@@ -45,19 +45,18 @@
       <span class="overview-item"><span class="overview-val">847</span> queries</span>
       <span class="overview-divider">|</span>
       <span class="overview-item overview-range">Mar 1 &mdash; Apr 6</span>
-      <span class="overview-cursor cursor-blink">█</span>
     </div>
   </div>
 
-  <!-- ══ TWO-COLUMN GRID ══ -->
+  <!-- ╝╝ TWO-COLUMN GRID ╝╝ -->
   <div class="analytics-col-left">
 
-    <!-- ════════════════════════════════════════════════════════
+    <!-- ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
          SECTION 2 — CONFUSION HEATMAP
-    ════════════════════════════════════════════════════════ -->
+    ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ -->
     <div class="an-block" id="heatmapBlock">
       <div class="an-block-header">
-        <span class="prompt">$</span> top_confusing_topics
+        Top confusing topics
         <span class="an-block-meta">sorted by frequency</span>
       </div>
       <div class="an-block-body">
@@ -102,7 +101,7 @@
         </div>
 
         <div class="chart-label">
-          <span class="prompt">$</span> topic_frequency --bar
+          Topic frequency
         </div>
         <div class="chart-wrap chart-wrap-md">
           <canvas id="topicChart"></canvas>
@@ -111,12 +110,12 @@
       </div>
     </div>
 
-    <!-- ════════════════════════════════════════════════════════
+    <!-- ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
          SECTION 4 — MODULE BREAKDOWN
-    ════════════════════════════════════════════════════════ -->
+    ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ -->
     <div class="an-block" id="moduleBlock">
       <div class="an-block-header">
-        <span class="prompt">$</span> module_breakdown
+        Module breakdown
         <span class="an-block-meta">by engagement &amp; difficulty</span>
       </div>
       <div class="an-block-body an-block-body-split">
@@ -170,7 +169,7 @@
 
         <div class="module-chart-wrap">
           <div class="chart-label">
-            <span class="prompt">$</span> query_distribution --donut
+            Query distribution
           </div>
           <div class="chart-wrap chart-wrap-donut">
             <canvas id="moduleChart"></canvas>
@@ -180,18 +179,16 @@
       </div>
     </div>
 
-    <!-- ════════════════════════════════════════════════════════
+    <!-- ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
          SECTION 5 — QUERY EXPLORER
-    ════════════════════════════════════════════════════════ -->
+    ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ -->
     <div class="an-block" id="queryBlock">
       <div class="an-block-header query-explorer-header">
         <div>
-          <span class="prompt">$</span>
-          <span id="queryHeaderText">recent_queries --live</span>
-          <span class="cursor-blink" style="font-size:0.75rem;margin-left:0.25rem;">█</span>
+          <span id="queryHeaderText">Recent queries</span>
         </div>
         <button class="btn-term btn-term-outline btn-sm-term" id="clearFilterBtn" style="display:none;">
-          $ clear filter
+          Clear filter
         </button>
       </div>
       <div class="an-block-body" style="padding:0;">
@@ -207,12 +204,12 @@
 
   <div class="analytics-col-right">
 
-    <!-- ════════════════════════════════════════════════════════
+    <!-- ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
          SECTION 3 — ENGAGEMENT STATS + TRENDS
-    ════════════════════════════════════════════════════════ -->
+    ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ -->
     <div class="an-block" id="statsBlock">
       <div class="an-block-header">
-        <span class="prompt">$</span> engagement_stats --snapshot
+        Engagement stats
       </div>
       <div class="an-block-body">
 
@@ -238,7 +235,7 @@
 
         <!-- Trend chart -->
         <div class="chart-label" style="margin-top:1.25rem;">
-          <span class="prompt">$</span> engagement_trend --weekly
+          Engagement trend
         </div>
         <div class="chart-wrap chart-wrap-sm">
           <canvas id="trendChart"></canvas>
@@ -247,16 +244,16 @@
       </div>
     </div>
 
-    <!-- ════════════════════════════════════════════════════════
+    <!-- ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
          SECTION 6 — AT-RISK STUDENTS
-    ════════════════════════════════════════════════════════ -->
+    ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ -->
     <div class="an-block" id="atRiskBlock">
       <div class="an-block-header">
-        <span class="prompt">$</span> at_risk_detection
+        At-risk detection
       </div>
       <div class="an-block-body">
 
-        <div class="an-comment">// based on interaction patterns — not personal identifiers</div>
+        <div class="an-comment">Based on interaction patterns — not personal identifiers</div>
 
         <ul class="risk-list">
           <li class="risk-item">
@@ -303,17 +300,17 @@
           </li>
         </ul>
 
-        <div class="an-comment an-comment-footer">// Phase 2 — predictive model integration pending</div>
+        <div class="an-comment an-comment-footer">Phase 2 — predictive model integration pending</div>
 
       </div>
     </div>
 
-    <!-- ════════════════════════════════════════════════════════
+    <!-- ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝
          SECTION 7 — FIGURE CONFUSION REPORT
-    ════════════════════════════════════════════════════════ -->
+    ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ -->
     <div class="an-block" id="figureBlock">
       <div class="an-block-header">
-        <span class="prompt">$</span> figure_confusion_report
+        Figure confusion report
       </div>
       <div class="an-block-body">
 
@@ -380,7 +377,7 @@
           </li>
         </ul>
 
-        <div class="an-comment an-comment-footer">// figures referenced most in student queries</div>
+        <div class="an-comment an-comment-footer">Figures referenced most in student queries</div>
 
       </div>
     </div>
@@ -445,7 +442,6 @@ function updateOverviewBar() {
   if (!overviewBar) return;
   
   overviewBar.innerHTML = `
-    <span class="overview-prompt">&gt;</span>
     <span class="overview-item overview-course">${courseId.toUpperCase()}</span>
     <span class="overview-divider">|</span>
     <span class="overview-item"><span class="overview-val">${LIVE_ANALYTICS.active_students || 0}</span> students</span>
@@ -455,7 +451,6 @@ function updateOverviewBar() {
     <span class="overview-item"><span class="overview-val">${LIVE_ANALYTICS.total_queries || 0}</span> queries</span>
     <span class="overview-divider">|</span>
     <span class="overview-item overview-range">Last 7 days</span>
-    <span class="overview-cursor cursor-blink">█</span>
   `;
 }
 
@@ -476,18 +471,26 @@ function updateHeatmap() {
       <td><span class="diff-badge diff-${topic.difficulty.toLowerCase()}">${topic.difficulty}</span></td>
     </tr>
   `).join('');
-  
+
   // Re-attach click handlers
   attachHeatmapHandlers();
+
+  // Mirror the same data into the topic frequency chart
+  const topicChart = Chart.getChart(document.getElementById('topicChart'));
+  if (topicChart) {
+    topicChart.data.labels = LIVE_ANALYTICS.confusing_topics.map(topic => topic.topic);
+    topicChart.data.datasets[0].data = LIVE_ANALYTICS.confusing_topics.map(topic => topic.count);
+    topicChart.update();
+  }
 }
 
 /* ── Update engagement chart with live data ───────────────────── */
 function updateEngagementChart() {
   if (!LIVE_ANALYTICS || !LIVE_ANALYTICS.engagement_trend) return;
-  
-  const chart = Chart.getChart(document.getElementById('engagementChart'));
+
+  const chart = Chart.getChart(document.getElementById('trendChart'));
   if (!chart) return;
-  
+
   const trend = LIVE_ANALYTICS.engagement_trend;
   chart.data.labels = trend.map(d => d.date.slice(5)); // MM-DD
   chart.data.datasets[0].data = trend.map(d => d.count);
@@ -506,7 +509,7 @@ function attachHeatmapHandlers() {
       activeTopic = topic;
       document.querySelectorAll('.heatmap-row').forEach(r => r.classList.remove('heatmap-row-active'));
       row.classList.add('heatmap-row-active');
-      document.getElementById('queryHeaderText').textContent = `queries :: ${topic}`;
+      document.getElementById('queryHeaderText').textContent = `Queries — ${topic}`;
       document.getElementById('clearFilterBtn').style.display = 'inline-flex';
       document.getElementById('queryBlock').scrollIntoView({ behavior:'smooth', block:'start' });
       renderQueries(topic);
@@ -515,16 +518,16 @@ function attachHeatmapHandlers() {
 }
 
 /* ── Shared chart defaults (tokens match instructor.css :root) ── */
-Chart.defaults.font.family = "'JetBrains Mono', 'Courier New', monospace";
+Chart.defaults.font.family = "'Inter', -apple-system, 'Segoe UI', sans-serif";
 Chart.defaults.font.size   = 11;
-Chart.defaults.color       = '#6e7681';   /* --text-dim */
+Chart.defaults.color       = '#98a2b3';   /* --text-muted */
 
-const ACCENT      = '#00bcd4';            /* --accent      */
-const GRID_COLOR  = '#1e3a3a';            /* --border      */
-const TICK_COLOR  = '#6e7681';            /* --text-dim    */
-const BORDER_COLOR= '#1e3a3a';            /* --border      */
-const ACCENT_FILL = 'rgba(0,188,212,0.08)';
-const TOOLTIP_BG  = '#111';              /* --surface     */
+const ACCENT      = '#2f6bed';            /* --accent        */
+const GRID_COLOR  = '#eef1f6';            /* --border-sub    */
+const TICK_COLOR  = '#98a2b3';            /* --text-muted    */
+const BORDER_COLOR= '#e4e8f0';            /* --border        */
+const ACCENT_FILL = 'rgba(47,107,237,0.10)';
+const TOOLTIP_BG  = '#101828';            /* --text-strong   */
 
 /* ── Chart 1: Topic frequency (horizontal bar) ────────────────── */
 new Chart(document.getElementById('topicChart'), {
@@ -534,11 +537,11 @@ new Chart(document.getElementById('topicChart'), {
     datasets: [{
       data: [0],
       backgroundColor: [
-        'rgba(0,188,212,0.25)',
+        'rgba(47,107,237,0.28)',
       ],
       borderColor: ACCENT,
       borderWidth: 1,
-      borderRadius: 0,
+      borderRadius: 6,
     }]
   },
   options: {
@@ -573,7 +576,7 @@ new Chart(document.getElementById('trendChart'), {
       pointHoverRadius: 5,
       fill: true,
       tension: 0.35,
-      borderWidth: 2,
+      borderWidth: 2.5,
     }]
   },
   options: {
@@ -599,13 +602,13 @@ new Chart(document.getElementById('moduleChart'), {
     datasets: [{
       data: [120, 89, 45, 38, 29],
       backgroundColor: [
-        'rgba(0,188,212,0.88)',
-        'rgba(0,188,212,0.65)',
-        'rgba(0,188,212,0.44)',
-        'rgba(0,188,212,0.28)',
-        'rgba(0,188,212,0.15)',
+        'rgba(47,107,237,0.88)',
+        'rgba(47,107,237,0.68)',
+        'rgba(47,107,237,0.48)',
+        'rgba(47,107,237,0.32)',
+        'rgba(47,107,237,0.18)',
       ],
-      borderColor: '#0d0d0d',   /* --bg */
+      borderColor: '#ffffff',   /* --surface */
       borderWidth: 2,
       hoverOffset: 6,
     }]
@@ -675,7 +678,7 @@ function renderQueries(filterTopic) {
   // blinking cursor at end
   const cursor = document.createElement('div');
   cursor.className = 'query-list-cursor';
-  cursor.textContent = '█';
+  cursor.textContent = '•';
   list.appendChild(cursor);
 }
 
@@ -717,7 +720,7 @@ document.getElementById('clearFilterBtn').addEventListener('click', clearFilter)
 function clearFilter() {
   activeTopic = null;
   document.querySelectorAll('.heatmap-row').forEach(r => r.classList.remove('heatmap-row-active'));
-  document.getElementById('queryHeaderText').textContent = 'recent_queries --live';
+  document.getElementById('queryHeaderText').textContent = 'Recent queries';
   document.getElementById('clearFilterBtn').style.display = 'none';
   renderQueries(null);
 }
@@ -753,20 +756,20 @@ function clearFilter() {
   }
   
   // Show loading states
-  document.getElementById('queryHeaderText').textContent = 'recent_queries --loading...';
+  document.getElementById('queryHeaderText').textContent = 'Recent queries — loading...';
   
   // Fetch live data from API
   await Promise.all([fetchAnalytics(), fetchQueries()]);
   
   // Final render
-  document.getElementById('queryHeaderText').textContent = 'recent_queries --live';
+  document.getElementById('queryHeaderText').textContent = 'Recent queries';
 })();
 </script>
 
 <!-- Logout Handler -->
 <script>
   document.querySelectorAll('a[href="#"]').forEach(link => {
-    if (link.textContent.includes('logout')) {
+    if (link.textContent.toLowerCase().includes('log out') || link.textContent.toLowerCase().includes('logout')) {
       link.addEventListener('click', async (e) => {
         e.preventDefault();
         try {

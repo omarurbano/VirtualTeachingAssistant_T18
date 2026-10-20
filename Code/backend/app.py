@@ -2184,7 +2184,13 @@ class User:
         self.role = role  # 'student' or 'teacher'
         self.created_at = datetime.now()
         self.last_login = None
-    
+
+    @property
+    def id(self):
+        """Alias for user_id (kept for callers that use `user.id`)."""
+        return self.user_id
+
+
     def to_dict(self):
         return {
             'user_id': self.user_id,
@@ -2991,10 +2997,19 @@ def get_student_courses(user_id):
             if response.status_code == 200:
                 enrollments = response.json()
                 # Format for frontend - include course_id
-                courses = [{
-                    'course_id': e.get('course_id'),
-                    'courses': {'name': e.get('courses', {}).get('name', 'Unknown')}
-                } for e in enrollments]
+                courses = []
+                for e in enrollments:
+                    course_meta = e.get('courses')
+                    if isinstance(course_meta, list):
+                        course_meta = course_meta[0] if course_meta else {}
+                    course_meta = course_meta or {}
+                    courses.append({
+                        'course_id': e.get('course_id'),
+                        'courses': {
+                            'name': course_meta.get('name', 'Unknown'),
+                            'code': course_meta.get('code', '')
+                        }
+                    })
                 return jsonify(courses)
             else:
                 return jsonify([])
@@ -3004,6 +3019,101 @@ def get_student_courses(user_id):
             
     except Exception as e:
         logger.error(f"Get student courses error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/student/analytics', methods=['GET'])
+def get_student_analytics():
+    """Dashboard stats + activity trend for the signed-in student (own data only)."""
+    try:
+        token = request.cookies.get('session_token')
+        if not token:
+            return jsonify({'error': 'Not authenticated'}), 401
+
+        user = auth_session.get_session(token)
+        if not user:
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        student_id = str(user.user_id)
+
+        # ── Enrolled courses ─────────────────────────────────────
+        courses = []
+        try:
+            response = requests.get(f"{NODE_API_URL}/studentcourses/{user.user_id}", timeout=10)
+            if response.ok:
+                for enrollment in response.json() or []:
+                    meta = enrollment.get('courses')
+                    if isinstance(meta, list):
+                        meta = meta[0] if meta else {}
+                    meta = meta or {}
+                    courses.append({
+                        'course_id': enrollment.get('course_id'),
+                        'name': meta.get('name', 'Unknown Course'),
+                        'code': meta.get('code', '')
+                    })
+        except requests.RequestException as e:
+            logger.warning(f"Student analytics: enrollment lookup failed: {e}")
+
+        # ── Per-course queries + materials ───────────────────────
+        total_materials = 0
+        question_timestamps = []
+        course_stats = []
+
+        for course in courses:
+            course_id = course['course_id']
+            questions = 0
+            materials = 0
+
+            try:
+                query_response = requests.get(f"{NODE_API_URL}/api/queries/{course_id}", timeout=8)
+                if query_response.ok:
+                    for query in query_response.json() or []:
+                        if str(query.get('student_id')) == student_id:
+                            questions += 1
+                            created_at = query.get('created_at')
+                            if created_at:
+                                question_timestamps.append(created_at)
+            except requests.RequestException as e:
+                logger.warning(f"Student analytics: query lookup failed for {course_id}: {e}")
+
+            try:
+                material_response = requests.get(f"{NODE_API_URL}/api/materials/{course_id}", timeout=8)
+                if material_response.ok:
+                    materials = len(material_response.json() or [])
+            except requests.RequestException as e:
+                logger.warning(f"Student analytics: material lookup failed for {course_id}: {e}")
+
+            total_materials += materials
+            course_stats.append({
+                'course_id': course_id,
+                'name': course['name'],
+                'code': course['code'],
+                'questions': questions,
+                'materials': materials
+            })
+
+        # ── 7-day activity trend ─────────────────────────────────
+        daily = []
+        for offset in range(6, -1, -1):
+            day = datetime.now() - timedelta(days=offset)
+            date_key = day.strftime('%Y-%m-%d')
+            count = sum(1 for ts in question_timestamps if str(ts)[:10] == date_key)
+            daily.append({
+                'date': date_key,
+                'label': day.strftime('%b %d'),
+                'count': count
+            })
+
+        return jsonify({
+            'classes_joined': len(courses),
+            'total_materials': total_materials,
+            'total_questions': len(question_timestamps),
+            'daily': daily,
+            'courses': course_stats
+        })
+
+    except Exception as e:
+        logger.error(f"Student analytics error: {e}")
         return jsonify({'error': str(e)}), 500
 
 

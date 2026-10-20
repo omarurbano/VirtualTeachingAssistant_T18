@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VTA // Instructor Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <title>VTA · Instructor Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/instructor.css') }}" />
 </head>
@@ -13,11 +13,17 @@
 <!-- ░░ TOP NAV ░░ -->
 <header class="top-bar">
   <div class="top-bar-brand">
-    <span class="prompt">$</span> vta<span class="accent">_</span>instructor
+    <span class="brand-mark" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+        <path d="M6 12v5c0 1.1 2.7 2.5 6 2.5s6-1.4 6-2.5v-5"/>
+      </svg>
+    </span>
+    VTA <span class="accent">Instructor</span>
   </div>
   <div class="top-bar-right">
     <span class="welcome-text">Welcome, <span class="accent">Dr. Reynolds</span></span>
-    <a href="#" class="btn-term btn-term-outline">$ logout</a>
+    <a href="#" class="btn-term btn-term-outline">Log out</a>
   </div>
 </header>
 
@@ -27,7 +33,7 @@
   <!-- ░░ SIDEBAR ░░ -->
   <aside class="sidebar">
     <div class="sidebar-header">
-      <span class="prompt">$</span> ls ./courses
+      Courses
     </div>
 
     <ul class="course-list" id="sidebarCourses">
@@ -36,7 +42,7 @@
 
     <div class="sidebar-footer">
       <button class="btn-term btn-term-primary w-100" data-bs-toggle="modal" data-bs-target="#createCourseModal">
-        $ create new course
+        + Create new course
       </button>
     </div>
   </aside>
@@ -45,8 +51,7 @@
   <main class="main-content">
 
     <div class="section-header">
-      <span class="prompt">$</span> cat ./courses/overview.json
-      <span class="cursor-blink">█</span>
+      Your courses
     </div>
 
     <div class="courses-grid">
@@ -58,21 +63,21 @@
             <div class="course-card-title">Databases</div>
             <span class="course-badge">CPTS_451</span>
           </div>
-          <div class="course-card-status online">● live</div>
+          <div class="course-card-status online">Active</div>
         </div>
         <div class="course-card-stats">
           <div class="stat-item">
-            <span class="stat-label">$ students</span>
+            <span class="stat-label">Students</span>
             <span class="stat-value">34</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">$ materials</span>
+            <span class="stat-label">Materials</span>
             <span class="stat-value">12</span>
           </div>
         </div>
         <div class="course-card-actions">
-          <a href="/instructor/course/cpts451" class="btn-term btn-term-primary flex-fill">$ open course</a>
-          <a href="/instructor/analytics/cpts451" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+          <a href="/instructor/course/cpts451" class="btn-term btn-term-primary flex-fill">Open course</a>
+          <a href="/instructor/analytics/cpts451" class="btn-term btn-term-outline flex-fill">View analytics</a>
         </div>
       </div>
 
@@ -83,21 +88,21 @@
             <div class="course-card-title">Programming Languages</div>
             <span class="course-badge">CPTS_355</span>
           </div>
-          <div class="course-card-status online">● live</div>
+          <div class="course-card-status online">Active</div>
         </div>
         <div class="course-card-stats">
           <div class="stat-item">
-            <span class="stat-label">$ students</span>
+            <span class="stat-label">Students</span>
             <span class="stat-value">28</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">$ materials</span>
+            <span class="stat-label">Materials</span>
             <span class="stat-value">9</span>
           </div>
         </div>
         <div class="course-card-actions">
-          <a href="/instructor/course/cpts355" class="btn-term btn-term-primary flex-fill">$ open course</a>
-          <a href="/instructor/analytics/cpts355" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+          <a href="/instructor/course/cpts355" class="btn-term btn-term-primary flex-fill">Open course</a>
+          <a href="/instructor/analytics/cpts355" class="btn-term btn-term-outline flex-fill">View analytics</a>
         </div>
       </div>
 
@@ -108,21 +113,21 @@
             <div class="course-card-title">Software Engineering</div>
             <span class="course-badge">CPTS_421</span>
           </div>
-          <div class="course-card-status online">● live</div>
+          <div class="course-card-status online">Active</div>
         </div>
         <div class="course-card-stats">
           <div class="stat-item">
-            <span class="stat-label">$ students</span>
+            <span class="stat-label">Students</span>
             <span class="stat-value">41</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">$ materials</span>
+            <span class="stat-label">Materials</span>
             <span class="stat-value">17</span>
           </div>
         </div>
         <div class="course-card-actions">
-          <a href="/instructor/course/cpts421" class="btn-term btn-term-primary flex-fill">$ open course</a>
-          <a href="/instructor/analytics/cpts421" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+          <a href="/instructor/course/cpts421" class="btn-term btn-term-primary flex-fill">Open course</a>
+          <a href="/instructor/analytics/cpts421" class="btn-term btn-term-outline flex-fill">View analytics</a>
         </div>
       </div>
 
@@ -133,21 +138,21 @@
             <div class="course-card-title">Systems Programming</div>
             <span class="course-badge">CPTS_360</span>
           </div>
-          <div class="course-card-status idle">○ idle</div>
+          <div class="course-card-status idle">Inactive</div>
         </div>
         <div class="course-card-stats">
           <div class="stat-item">
-            <span class="stat-label">$ students</span>
+            <span class="stat-label">Students</span>
             <span class="stat-value">22</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">$ materials</span>
+            <span class="stat-label">Materials</span>
             <span class="stat-value">6</span>
           </div>
         </div>
         <div class="course-card-actions">
-          <a href="/instructor/course/cpts360" class="btn-term btn-term-primary flex-fill">$ open course</a>
-          <a href="/instructor/analytics/cpts360" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+          <a href="/instructor/course/cpts360" class="btn-term btn-term-primary flex-fill">Open course</a>
+          <a href="/instructor/analytics/cpts360" class="btn-term btn-term-outline flex-fill">View analytics</a>
         </div>
       </div>
 
@@ -158,21 +163,21 @@
             <div class="course-card-title">Machine Learning</div>
             <span class="course-badge">CPTS_415</span>
           </div>
-          <div class="course-card-status idle">○ idle</div>
+          <div class="course-card-status idle">Inactive</div>
         </div>
         <div class="course-card-stats">
           <div class="stat-item">
-            <span class="stat-label">$ students</span>
+            <span class="stat-label">Students</span>
             <span class="stat-value">19</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">$ materials</span>
+            <span class="stat-label">Materials</span>
             <span class="stat-value">14</span>
           </div>
         </div>
         <div class="course-card-actions">
-          <a href="/instructor/course/cpts415" class="btn-term btn-term-primary flex-fill">$ open course</a>
-          <a href="/instructor/analytics/cpts415" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+          <a href="/instructor/course/cpts415" class="btn-term btn-term-primary flex-fill">Open course</a>
+          <a href="/instructor/analytics/cpts415" class="btn-term btn-term-outline flex-fill">View analytics</a>
         </div>
       </div>
 
@@ -188,9 +193,9 @@
 
       <div class="modal-header term-modal-header">
         <span class="modal-title-text">
-          <span class="prompt">$</span> create_course --interactive
+          Create new course
         </span>
-        <button type="button" class="btn-term-close" data-bs-dismiss="modal" aria-label="Close">[x]</button>
+        <button type="button" class="btn-term-close" data-bs-dismiss="modal" aria-label="Close">✕</button>
       </div>
 
       <div class="modal-body term-modal-body">
@@ -199,14 +204,14 @@
         <div id="createCourseForm">
           <div class="term-field">
             <label class="term-label" for="courseName">
-              <span class="prompt">$</span> course_name:
+              Course name
             </label>
             <input type="text" id="courseName" class="term-input" placeholder="e.g. Advanced Algorithms" autocomplete="off" />
           </div>
 
           <div class="term-field">
             <label class="term-label" for="courseSubject">
-              <span class="prompt">$</span> subject_tag:
+              Course code
             </label>
             <input type="text" id="courseSubject" class="term-input" placeholder="e.g. CPTS_500" autocomplete="off" />
           </div>
@@ -215,10 +220,10 @@
 
           <div class="modal-actions">
             <button type="button" class="btn-term btn-term-primary flex-fill" id="submitCreateCourse">
-              $ initialize course
+              Create course
             </button>
             <button type="button" class="btn-term btn-term-outline flex-fill" data-bs-dismiss="modal">
-              $ cancel
+              Cancel
             </button>
           </div>
         </div>
@@ -229,14 +234,14 @@
             <div class="term-output-line">Initializing course...</div>
             <div class="term-output-line">Generating class code... <span class="accent" id="generatedCode"></span></div>
             <div class="term-output-line">Writing to database... OK</div>
-            <div class="term-output-line success-line">&gt; Course created successfully.</div>
+            <div class="term-output-line success-line">Course created successfully.</div>
             <div class="term-output-line success-line">
               Share code: <span class="code-highlight" id="shareCode"></span>
             </div>
           </div>
           <div class="modal-actions mt-3">
             <button type="button" class="btn-term btn-term-primary flex-fill" data-bs-dismiss="modal" id="doneBtn">
-              $ done
+              Done
             </button>
           </div>
         </div>
@@ -281,13 +286,13 @@
     const errEl   = document.getElementById('formError');
 
     if (!name || !subject) {
-      errEl.textContent = '> ERROR: all fields required.';
+      errEl.textContent = 'All fields are required.';
       errEl.style.display = 'block';
       return;
     }
 
     try {
-      errEl.textContent = '> Creating course...';
+      errEl.textContent = 'Creating course...';
       errEl.style.display = 'block';
       
       const response = await fetch('/api/courses', {
@@ -308,12 +313,12 @@
         // Reload courses list
         loadCourses();
       } else {
-        errEl.textContent = '> ERROR: ' + (data.error || 'Failed to create course');
+        errEl.textContent = (data.error || 'Failed to create course');
         errEl.style.display = 'block';
       }
     } catch (error) {
       console.error('Create course error:', error);
-      errEl.textContent = '> ERROR: ' + error.message;
+      errEl.textContent = error.message;
       errEl.style.display = 'block';
     }
   });
@@ -344,7 +349,7 @@
     
     sidebar.innerHTML = courses.map((course, idx) => `
       <li class="course-list-item ${idx === 0 ? 'active' : ''}" data-course="${course.id}">
-        <span class="prompt">&gt;</span>
+        <span class="prompt">›</span>
         <span class="course-list-code">${escapeHtml(course.code)}</span>
         <span class="course-list-name">${escapeHtml(course.name)}</span>
       </li>
@@ -380,21 +385,21 @@
             <div class="course-card-title">${escapeHtml(course.name)}</div>
             <span class="course-badge">${escapeHtml(course.code)}</span>
           </div>
-          <div class="course-card-status online">● live</div>
+          <div class="course-card-status online">Active</div>
         </div>
         <div class="course-card-stats">
           <div class="stat-item">
-            <span class="stat-label">$ students</span>
+            <span class="stat-label">Students</span>
             <span class="stat-value">${course.students_count || 0}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">$ materials</span>
+            <span class="stat-label">Materials</span>
             <span class="stat-value">${course.materials_count || 0}</span>
           </div>
         </div>
         <div class="course-card-actions">
-          <a href="/instructor/course/${course.id}" class="btn-term btn-term-primary flex-fill">$ open course</a>
-          <a href="/instructor/analytics/${course.id}" class="btn-term btn-term-outline flex-fill">$ view analytics</a>
+          <a href="/instructor/course/${course.id}" class="btn-term btn-term-primary flex-fill">Open course</a>
+          <a href="/instructor/analytics/${course.id}" class="btn-term btn-term-outline flex-fill">View analytics</a>
         </div>
       `;
       grid.appendChild(card);
@@ -414,7 +419,7 @@
 <!-- Logout Handler -->
 <script>
   document.querySelectorAll('a[href="#"]').forEach(link => {
-    if (link.textContent.includes('logout')) {
+    if (link.textContent.toLowerCase().includes('log out') || link.textContent.toLowerCase().includes('logout')) {
       link.addEventListener('click', async (e) => {
         e.preventDefault();
         try {
