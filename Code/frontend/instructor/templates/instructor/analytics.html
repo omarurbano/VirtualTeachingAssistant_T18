@@ -36,15 +36,15 @@
   ╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝╝ -->
   <div class="analytics-overview">
     <div class="overview-bar">
-      <span class="overview-item overview-course">CPTS_451</span>
+      <span class="overview-item overview-course" id="overviewCourse">---</span>
       <span class="overview-divider">|</span>
-      <span class="overview-item"><span class="overview-val">34</span> students</span>
+      <span class="overview-item"><span class="overview-val" id="overviewStudents">0</span> students</span>
       <span class="overview-divider">|</span>
-      <span class="overview-item"><span class="overview-val">12</span> documents</span>
+      <span class="overview-item"><span class="overview-val" id="overviewDocs">0</span> documents</span>
       <span class="overview-divider">|</span>
-      <span class="overview-item"><span class="overview-val">847</span> queries</span>
+      <span class="overview-item"><span class="overview-val" id="overviewQueries">0</span> queries</span>
       <span class="overview-divider">|</span>
-      <span class="overview-item overview-range">Mar 1 &mdash; Apr 6</span>
+      <span class="overview-item overview-range" id="overviewRange">Loading...</span>
     </div>
   </div>
 
@@ -71,31 +71,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr class="heatmap-row" data-topic="Backpropagation">
-                <td class="topic-name-cell">Backpropagation</td>
-                <td class="q-count-cell">42</td>
-                <td><span class="diff-badge diff-high">HIGH</span></td>
-              </tr>
-              <tr class="heatmap-row" data-topic="Loss Functions">
-                <td class="topic-name-cell">Loss Functions</td>
-                <td class="q-count-cell">30</td>
-                <td><span class="diff-badge diff-medium">MEDIUM</span></td>
-              </tr>
-              <tr class="heatmap-row" data-topic="Gradient Descent">
-                <td class="topic-name-cell">Gradient Descent</td>
-                <td class="q-count-cell">28</td>
-                <td><span class="diff-badge diff-high">HIGH</span></td>
-              </tr>
-              <tr class="heatmap-row" data-topic="Regularization">
-                <td class="topic-name-cell">Regularization</td>
-                <td class="q-count-cell">15</td>
-                <td><span class="diff-badge diff-medium">MEDIUM</span></td>
-              </tr>
-              <tr class="heatmap-row" data-topic="CNN Architecture">
-                <td class="topic-name-cell">CNN Architecture</td>
-                <td class="q-count-cell">12</td>
-                <td><span class="diff-badge diff-low">LOW</span></td>
-              </tr>
+              <!-- rows injected by JS -->
             </tbody>
           </table>
         </div>
@@ -132,36 +108,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>Neural Networks</td>
-                  <td class="q-count-cell">120</td>
-                  <td><span class="diff-badge diff-high">HIGH</span></td>
-                  <td class="confused-cell">Backpropagation</td>
-                </tr>
-                <tr>
-                  <td>Optimization</td>
-                  <td class="q-count-cell">89</td>
-                  <td><span class="diff-badge diff-medium">MEDIUM</span></td>
-                  <td class="confused-cell">Learning Rate</td>
-                </tr>
-                <tr>
-                  <td>Data Preprocessing</td>
-                  <td class="q-count-cell">45</td>
-                  <td><span class="diff-badge diff-low">LOW</span></td>
-                  <td class="confused-cell">Normalization</td>
-                </tr>
-                <tr>
-                  <td>Model Evaluation</td>
-                  <td class="q-count-cell">38</td>
-                  <td><span class="diff-badge diff-medium">MEDIUM</span></td>
-                  <td class="confused-cell">Cross-Validation</td>
-                </tr>
-                <tr>
-                  <td>CNNs &amp; RNNs</td>
-                  <td class="q-count-cell">29</td>
-                  <td><span class="diff-badge diff-low">LOW</span></td>
-                  <td class="confused-cell">Pooling Layers</td>
-                </tr>
+                <!-- rows injected by JS -->
               </tbody>
             </table>
           </div>
@@ -217,19 +164,19 @@
         <div class="stat-grid">
           <div class="stat-box">
             <div class="stat-box-label">total queries</div>
-            <div class="stat-box-value">847</div>
+            <div class="stat-box-value" id="statTotalQueries">0</div>
           </div>
           <div class="stat-box">
             <div class="stat-box-label">active students</div>
-            <div class="stat-box-value">28</div>
+            <div class="stat-box-value" id="statActiveStudents">0</div>
           </div>
           <div class="stat-box">
-            <div class="stat-box-label">avg session length</div>
-            <div class="stat-box-value">4.3<span class="stat-box-unit">min</span></div>
+            <div class="stat-box-label">avg confidence</div>
+            <div class="stat-box-value" id="statAvgConfidence">0</div>
           </div>
           <div class="stat-box">
             <div class="stat-box-label">docs uploaded</div>
-            <div class="stat-box-value">12</div>
+            <div class="stat-box-value" id="statDocsUploaded">0</div>
           </div>
         </div>
 
@@ -255,49 +202,8 @@
 
         <div class="an-comment">Based on interaction patterns — not personal identifiers</div>
 
-        <ul class="risk-list">
-          <li class="risk-item">
-            <div class="risk-top">
-              <span class="risk-id">STU_3A9F</span>
-              <span class="risk-badge risk-struggling">STRUGGLING</span>
-            </div>
-            <div class="risk-topics">Backpropagation &bull; Gradient Descent</div>
-          </li>
-          <li class="risk-item">
-            <div class="risk-top">
-              <span class="risk-id">STU_B12C</span>
-              <span class="risk-badge risk-repeat">REPEATED CONFUSION</span>
-            </div>
-            <div class="risk-topics">Loss Functions &bull; Regularization</div>
-          </li>
-          <li class="risk-item">
-            <div class="risk-top">
-              <span class="risk-id">STU_E77D</span>
-              <span class="risk-badge risk-low-interact">LOW INTERACTION</span>
-            </div>
-            <div class="risk-topics">No sessions in 14 days</div>
-          </li>
-          <li class="risk-item">
-            <div class="risk-top">
-              <span class="risk-id">STU_4F08</span>
-              <span class="risk-badge risk-repeat">REPEATED CONFUSION</span>
-            </div>
-            <div class="risk-topics">CNN Architecture &bull; Pooling Layers</div>
-          </li>
-          <li class="risk-item">
-            <div class="risk-top">
-              <span class="risk-id">STU_2D61</span>
-              <span class="risk-badge risk-low-interact">LOW INTERACTION</span>
-            </div>
-            <div class="risk-topics">No sessions in 9 days</div>
-          </li>
-          <li class="risk-item">
-            <div class="risk-top">
-              <span class="risk-id">STU_9C3E</span>
-              <span class="risk-badge risk-struggling">STRUGGLING</span>
-            </div>
-            <div class="risk-topics">Optimization &bull; Learning Rate</div>
-          </li>
+        <ul class="risk-list" id="atRiskList">
+          <li class="risk-item text-muted">No at-risk students detected.</li>
         </ul>
 
         <div class="an-comment an-comment-footer">Phase 2 — predictive model integration pending</div>
@@ -314,67 +220,8 @@
       </div>
       <div class="an-block-body">
 
-        <ul class="figure-list">
-          <li class="figure-item">
-            <div class="figure-meta">
-              <span class="figure-name">Figure 3 <span class="figure-desc">(Backprop diagram)</span></span>
-              <span class="figure-queries">25 queries</span>
-            </div>
-            <div class="figure-bar-row">
-              <div class="figure-bar-track">
-                <div class="figure-bar-fill" style="width:60%;"></div>
-              </div>
-              <span class="figure-rate figure-rate-high">60%</span>
-            </div>
-          </li>
-          <li class="figure-item">
-            <div class="figure-meta">
-              <span class="figure-name">Figure 7 <span class="figure-desc">(Loss curve)</span></span>
-              <span class="figure-queries">18 queries</span>
-            </div>
-            <div class="figure-bar-row">
-              <div class="figure-bar-track">
-                <div class="figure-bar-fill" style="width:44%;"></div>
-              </div>
-              <span class="figure-rate figure-rate-medium">44%</span>
-            </div>
-          </li>
-          <li class="figure-item">
-            <div class="figure-meta">
-              <span class="figure-name">Figure 12 <span class="figure-desc">(Gradient flow)</span></span>
-              <span class="figure-queries">14 queries</span>
-            </div>
-            <div class="figure-bar-row">
-              <div class="figure-bar-track">
-                <div class="figure-bar-fill" style="width:35%;"></div>
-              </div>
-              <span class="figure-rate figure-rate-medium">35%</span>
-            </div>
-          </li>
-          <li class="figure-item">
-            <div class="figure-meta">
-              <span class="figure-name">Figure 1 <span class="figure-desc">(Network arch)</span></span>
-              <span class="figure-queries">8 queries</span>
-            </div>
-            <div class="figure-bar-row">
-              <div class="figure-bar-track">
-                <div class="figure-bar-fill" style="width:20%;"></div>
-              </div>
-              <span class="figure-rate figure-rate-low">20%</span>
-            </div>
-          </li>
-          <li class="figure-item">
-            <div class="figure-meta">
-              <span class="figure-name">Figure 5 <span class="figure-desc">(CNN layers)</span></span>
-              <span class="figure-queries">6 queries</span>
-            </div>
-            <div class="figure-bar-row">
-              <div class="figure-bar-track">
-                <div class="figure-bar-fill" style="width:12%;"></div>
-              </div>
-              <span class="figure-rate figure-rate-low">12%</span>
-            </div>
-          </li>
+        <ul class="figure-list" id="figureList">
+          <li class="figure-item text-muted">No figure data.</li>
         </ul>
 
         <div class="an-comment an-comment-footer">Figures referenced most in student queries</div>
@@ -410,6 +257,8 @@ async function fetchAnalytics() {
       updateOverviewBar();
       updateHeatmap();
       updateEngagementChart();
+      updateStats();
+      updateAtRisk();
       console.log('Live analytics loaded:', LIVE_ANALYTICS);
     } else {
       console.warn('Analytics API returned', response.status);
@@ -485,6 +334,39 @@ function updateHeatmap() {
 }
 
 /* ── Update engagement chart with live data ───────────────────── */
+function updateStats() {
+  if (!LIVE_ANALYTICS) return;
+  const a = LIVE_ANALYTICS;
+  const tq = document.getElementById('statTotalQueries');
+  const as = document.getElementById('statActiveStudents');
+  const ac = document.getElementById('statAvgConfidence');
+  const du = document.getElementById('statDocsUploaded');
+  if (tq) tq.textContent = a.total_queries || 0;
+  if (as) as.textContent = a.active_students || 0;
+  if (ac) ac.textContent = (a.avg_confidence != null) ? a.avg_confidence : 0;
+  if (du) du.textContent = a.docs_uploaded || 0;
+}
+
+function updateAtRisk() {
+  if (!LIVE_ANALYTICS || !LIVE_ANALYTICS.at_risk_students) return;
+  const list = document.getElementById('atRiskList');
+  if (!list) return;
+  const items = LIVE_ANALYTICS.at_risk_students;
+  if (!items.length) {
+    list.innerHTML = '<li class="risk-item text-muted">No at-risk students detected.</li>';
+    return;
+  }
+  list.innerHTML = items.map(s => `
+    <li class="risk-item">
+      <div class="risk-top">
+        <span class="risk-id">STU_${String(s.student_id).slice(0,4).toUpperCase()}</span>
+        <span class="risk-badge risk-struggling">${s.reason || 'NEEDS_HELP'}</span>
+      </div>
+      <div class="risk-topics">${s.total_queries} queries, ${s.failed_queries} failed</div>
+    </li>
+  `).join('');
+}
+
 function updateEngagementChart() {
   if (!LIVE_ANALYTICS || !LIVE_ANALYTICS.engagement_trend) return;
 
@@ -565,10 +447,10 @@ new Chart(document.getElementById('topicChart'), {
 new Chart(document.getElementById('trendChart'), {
   type: 'line',
   data: {
-    labels: ['wk1','wk2','wk3','wk4','wk5','wk6','wk7','wk8'],
+    labels: [],
     datasets: [{
       label: 'queries',
-      data: [34, 62, 88, 110, 97, 130, 145, 181],
+      data: [],
       borderColor: ACCENT,
       backgroundColor: ACCENT_FILL,
       pointBackgroundColor: ACCENT,
@@ -598,17 +480,11 @@ new Chart(document.getElementById('trendChart'), {
 new Chart(document.getElementById('moduleChart'), {
   type: 'doughnut',
   data: {
-    labels: ['Neural Networks', 'Optimization', 'Data Preprocessing', 'Model Evaluation', 'CNNs & RNNs'],
+    labels: [],
     datasets: [{
-      data: [120, 89, 45, 38, 29],
-      backgroundColor: [
-        'rgba(47,107,237,0.88)',
-        'rgba(47,107,237,0.68)',
-        'rgba(47,107,237,0.48)',
-        'rgba(47,107,237,0.32)',
-        'rgba(47,107,237,0.18)',
-      ],
-      borderColor: '#ffffff',   /* --surface */
+      data: [],
+      backgroundColor: [],
+      borderColor: '#ffffff',
       borderWidth: 2,
       hoverOffset: 6,
     }]

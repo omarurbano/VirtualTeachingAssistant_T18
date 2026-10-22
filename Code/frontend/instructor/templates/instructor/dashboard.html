@@ -22,7 +22,7 @@
     VTA <span class="accent">Instructor</span>
   </div>
   <div class="top-bar-right">
-    <span class="welcome-text">Welcome, <span class="accent">Dr. Reynolds</span></span>
+    <span class="welcome-text">Welcome, <span class="accent" id="teacherNameDisplay">Instructor</span></span>
     <a href="#" class="btn-term btn-term-outline">Log out</a>
   </div>
 </header>
@@ -54,133 +54,8 @@
       Your courses
     </div>
 
-    <div class="courses-grid">
-
-      <!-- Card 1 -->
-      <div class="course-card">
-        <div class="course-card-header">
-          <div>
-            <div class="course-card-title">Databases</div>
-            <span class="course-badge">CPTS_451</span>
-          </div>
-          <div class="course-card-status online">Active</div>
-        </div>
-        <div class="course-card-stats">
-          <div class="stat-item">
-            <span class="stat-label">Students</span>
-            <span class="stat-value">34</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Materials</span>
-            <span class="stat-value">12</span>
-          </div>
-        </div>
-        <div class="course-card-actions">
-          <a href="/instructor/course/cpts451" class="btn-term btn-term-primary flex-fill">Open course</a>
-          <a href="/instructor/analytics/cpts451" class="btn-term btn-term-outline flex-fill">View analytics</a>
-        </div>
-      </div>
-
-      <!-- Card 2 -->
-      <div class="course-card">
-        <div class="course-card-header">
-          <div>
-            <div class="course-card-title">Programming Languages</div>
-            <span class="course-badge">CPTS_355</span>
-          </div>
-          <div class="course-card-status online">Active</div>
-        </div>
-        <div class="course-card-stats">
-          <div class="stat-item">
-            <span class="stat-label">Students</span>
-            <span class="stat-value">28</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Materials</span>
-            <span class="stat-value">9</span>
-          </div>
-        </div>
-        <div class="course-card-actions">
-          <a href="/instructor/course/cpts355" class="btn-term btn-term-primary flex-fill">Open course</a>
-          <a href="/instructor/analytics/cpts355" class="btn-term btn-term-outline flex-fill">View analytics</a>
-        </div>
-      </div>
-
-      <!-- Card 3 -->
-      <div class="course-card">
-        <div class="course-card-header">
-          <div>
-            <div class="course-card-title">Software Engineering</div>
-            <span class="course-badge">CPTS_421</span>
-          </div>
-          <div class="course-card-status online">Active</div>
-        </div>
-        <div class="course-card-stats">
-          <div class="stat-item">
-            <span class="stat-label">Students</span>
-            <span class="stat-value">41</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Materials</span>
-            <span class="stat-value">17</span>
-          </div>
-        </div>
-        <div class="course-card-actions">
-          <a href="/instructor/course/cpts421" class="btn-term btn-term-primary flex-fill">Open course</a>
-          <a href="/instructor/analytics/cpts421" class="btn-term btn-term-outline flex-fill">View analytics</a>
-        </div>
-      </div>
-
-      <!-- Card 4 -->
-      <div class="course-card">
-        <div class="course-card-header">
-          <div>
-            <div class="course-card-title">Systems Programming</div>
-            <span class="course-badge">CPTS_360</span>
-          </div>
-          <div class="course-card-status idle">Inactive</div>
-        </div>
-        <div class="course-card-stats">
-          <div class="stat-item">
-            <span class="stat-label">Students</span>
-            <span class="stat-value">22</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Materials</span>
-            <span class="stat-value">6</span>
-          </div>
-        </div>
-        <div class="course-card-actions">
-          <a href="/instructor/course/cpts360" class="btn-term btn-term-primary flex-fill">Open course</a>
-          <a href="/instructor/analytics/cpts360" class="btn-term btn-term-outline flex-fill">View analytics</a>
-        </div>
-      </div>
-
-      <!-- Card 5 -->
-      <div class="course-card">
-        <div class="course-card-header">
-          <div>
-            <div class="course-card-title">Machine Learning</div>
-            <span class="course-badge">CPTS_415</span>
-          </div>
-          <div class="course-card-status idle">Inactive</div>
-        </div>
-        <div class="course-card-stats">
-          <div class="stat-item">
-            <span class="stat-label">Students</span>
-            <span class="stat-value">19</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Materials</span>
-            <span class="stat-value">14</span>
-          </div>
-        </div>
-        <div class="course-card-actions">
-          <a href="/instructor/course/cpts415" class="btn-term btn-term-primary flex-fill">Open course</a>
-          <a href="/instructor/analytics/cpts415" class="btn-term btn-term-outline flex-fill">View analytics</a>
-        </div>
-      </div>
-
+    <div class="courses-grid" id="coursesGrid">
+      <div class="text-muted p-3">Loading courses...</div>
     </div><!-- /courses-grid -->
   </main>
 </div><!-- /layout-wrapper -->

@@ -83,7 +83,7 @@ app.post("/course", async (req, res) => {
             name, 
             code, 
             description: description || '', 
-            teacher_id: teacher_id || 1,
+            teacher_id: teacher_id || null,
             is_active: true 
         }])
         .select()
@@ -461,21 +461,10 @@ app.get('/debug/vector-chunks', async (req, res) => {
 // START SERVER
 // ============================================
 
-// Update test users
-async function seedUsers() {
-    const crypto = require('crypto');
-    const password_hash = crypto.createHash('sha256').update('demo123').digest('hex');
-    await supabase.from('users').update({ password_hash }).eq('email', 'teacher@test.com');
-    await supabase.from('users').update({ password_hash }).eq('email', 'student@test.com');
-    console.log('Updated password hashes');
-}
-
-seedUsers().then(() => {
-    const PORT = 3000;
-    const server = app.listen(PORT, () => {
-        console.log(`Server running on http://localhost:${PORT}`);
-    });
-
-    process.on('SIGINT', () => { console.log('\nShutting down...'); server.close(() => { console.log('Server closed'); process.exit(0); }); });
-    process.on('SIGTERM', () => { server.close(() => { process.exit(0); }); });
+const PORT = 3000;
+const server = app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
 });
+
+process.on('SIGINT', () => { console.log('\nShutting down...'); server.close(() => { console.log('Server closed'); process.exit(0); }); });
+process.on('SIGTERM', () => { server.close(() => { process.exit(0); }); });

@@ -2346,26 +2346,7 @@ class AuthSession:
 # Initialize auth system
 auth_session = AuthSession()
 
-# Seed some test users for development
-def _seed_test_users():
-    """Create test users for development."""
-    # Teacher account
-    auth_session.create_user(
-        'teacher@cpts421.edu',
-        'Dr. Instructor',
-        'teacher123',
-        'teacher'
-    )
-    # Student account
-    auth_session.create_user(
-        'student@cpts421.edu', 
-        'Student User',
-        'student123',
-        'student'
-    )
-    logger.info("Test users seeded: teacher@cpts421.edu / teacher123, student@cpts421.edu / student123")
-
-_seed_test_users()
+# Auth uses the database-backed user store; no hardcoded test users are seeded here.
 
 
 # ============================================================================

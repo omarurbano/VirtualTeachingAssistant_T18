@@ -766,18 +766,9 @@
         const a    = document.createElement('a');
         a.href = url; a.download = `${courseId}_roster.csv`; a.click();
         URL.revokeObjectURL(url);
-      } else {
-        // No API data, use hardcoded as fallback
-        const data = [
-          ['name','email','joined','queries'],
-          ['Alice Nguyen','a.nguyen@wsu.edu','2025-01-13','47'],
-        ];
-        const csv  = data.map(r => r.join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href = url; a.download = `${courseId}_roster.csv`; a.click();
-        URL.revokeObjectURL(url);
+        // No API data available
+        alert('No roster data available to export.');
+        return;
       }
     } catch (error) {
       console.error('Export error:', error);
