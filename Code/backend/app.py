@@ -4007,18 +4007,13 @@ def query():
                                         if materials_resp.ok:
                                             materials = materials_resp.json()
                                             file_name = chunk.get('file_name', '')
-                                            print(f"DEBUG: Looking for file_name={file_name} in materials")
                                             for material in materials:
-                                                print(f"DEBUG: Checking material {material.get('file_name')} type {material.get('source_type')}")
                                                 if material.get('file_name', '').strip().lower() == file_name.strip().lower() and material.get('source_type') == 'media_transcript':
-                                                    old_id = metadata['file_id']
-                                                    metadata['file_id'] = material.get('file_id')
-                                                    print(f"DEBUG: Updated file_id from {old_id} to {metadata['file_id']}")
+                                                    metadata['file_id'] = material.get('file_id', metadata['file_id'])
                                                     break
                                         else:
-                                            print(f"DEBUG: Failed to get materials: {materials_resp.status_code}")
+                                            logger.warning(f"Failed to get materials: {materials_resp.status_code}")
                                     except Exception as lookup_err:
-                                        print(f"DEBUG: Exception in lookup: {lookup_err}")
                                         logger.warning(f"Could not look up Google Drive ID for {file_name}: {lookup_err}")
 
                                 if text and len(text) > 10:
@@ -4039,9 +4034,6 @@ def query():
                 logger.warning(f"Failed to load chunks on demand: {load_err}")
 
         has_documents = has_uploaded_list or has_vector_docs
-        
-        # DEBUG: Print what's happening
-        print(f"DEBUG: course_id={course_id}, has_images={has_images}, has_uploaded_list={has_uploaded_list}, has_vector_docs={has_vector_docs}")
         
         # TEMPORARILY BYPASS CHECK for testing - allow all queries
         # (remove this to enable proper check)
