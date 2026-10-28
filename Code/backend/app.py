@@ -544,6 +544,53 @@ class SimpleEmbeddingManager:
         return self.dimension
 
 
+class OllamaEmbeddingManager:
+    """Embedding manager that calls an Ollama server for embeddings."""
+
+    def __init__(self, model_name='nomic-embed-text', base_url='http://localhost:11434'):
+        self.model_name = model_name
+        self.base_url = base_url.rstrip('/')
+        self.dimension = None
+        try:
+            import requests
+            resp = requests.post(self.base_url + '/api/embeddings',
+                                 json={'model': self.model_name, 'prompt': 'dimension probe'},
+                                 timeout=30)
+            if resp.ok:
+                emb = resp.json().get('embedding', [])
+                self.dimension = len(emb)
+                logger.info(f'Ollama embedding model {model_name}: dimension {self.dimension}')
+            else:
+                logger.error(f'Ollama embedding probe failed: {resp.status_code} {resp.text}')
+                self.dimension = 768
+        except Exception as e:
+            logger.error(f'Ollama embedding init failed: {e}')
+            self.dimension = 768
+
+    def _embed(self, text):
+        import requests
+        resp = requests.post(self.base_url + '/api/embeddings',
+                             json={'model': self.model_name, 'prompt': text},
+                             timeout=60)
+        resp.raise_for_status()
+        return resp.json()['embedding']
+
+    def embed_query(self, text):
+        return self._embed(text)
+
+    def embed_documents(self, documents):
+        if not documents:
+            return []
+        texts = [doc.page_content if hasattr(doc, 'page_content') else str(doc) for doc in documents]
+        out = []
+        for t in texts:
+            out.append(self._embed(t))
+        return out
+
+    def get_embedding_dimension(self):
+        return self.dimension or 768
+
+
 class SimpleVectorStore:
     """Standalone in-memory vector store."""
     
@@ -1084,9 +1131,9 @@ class RAGApplicationState:
             # Try to use Gemini Embedding 2
             try:
                 from embedding_manager import EmbeddingManager
-                
+
                 gemini_dims = int(os.environ.get('GEMINI_EMBEDDING_DIMENSIONS', 768))
-                
+
                 self.embedding_manager = EmbeddingManager(
                     provider='gemini',
                     model_name='models/gemini-embedding-2-preview',
@@ -1095,10 +1142,9 @@ class RAGApplicationState:
                 )
                 self.actual_embedding_provider = 'gemini'
                 logger.info(f"Using Gemini Embedding 2 with {gemini_dims} dimensions")
-                
+
             except Exception as e:
                 error_msg = str(e)
-                # Check for Python version compatibility issue
                 if "Metaclasses" in error_msg or "tp_new" in error_msg:
                     logger.warning(f"Gemini incompatible with Python 3.14: {error_msg}")
                     logger.info("Falling back to sentence-transformers (Gemini requires Python 3.11-3.13)")
@@ -1107,6 +1153,12 @@ class RAGApplicationState:
                     logger.info("Falling back to sentence-transformers")
                 self.embedding_manager = SimpleEmbeddingManager('all-MiniLM-L6-v2')
                 self.actual_embedding_provider = 'sentence-transformers'
+        elif embedding_provider == 'ollama':
+            ollama_model = os.environ.get('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text')
+            ollama_url = os.environ.get('MODEL_SERVER_URL', 'http://localhost:11434')
+            self.embedding_manager = OllamaEmbeddingManager(model_name=ollama_model, base_url=ollama_url)
+            self.actual_embedding_provider = 'ollama'
+            logger.info(f"Using Ollama embeddings: {ollama_model} via {ollama_url}")
         else:
             # Use default sentence-transformers
             self.embedding_manager = SimpleEmbeddingManager('all-MiniLM-L6-v2')
