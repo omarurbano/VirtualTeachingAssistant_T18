@@ -33,3 +33,4 @@ nul
 
 # Node.js
 node_modules/
+.vercel

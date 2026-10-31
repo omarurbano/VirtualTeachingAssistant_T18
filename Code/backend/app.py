@@ -4055,57 +4055,64 @@ def query():
             try:
                 import requests
                 logger.info("No vector documents found, loading from database...")
-                chunks_resp = requests.get(f"{NODE_API_URL}/api/vector-chunks", timeout=10)
+                cluster_ingest_url = os.environ.get('CLUSTER_INGEST_URL', '').rstrip('/')
+                if cluster_ingest_url:
+                    chunks_resp = requests.get(f"{cluster_ingest_url}/chunks", timeout=10)
+                    if chunks_resp.ok:
+                        all_chunks = chunks_resp.json().get('chunks', [])
+                    else:
+                        all_chunks = []
+                else:
+                    chunks_resp = requests.get(f"{NODE_API_URL}/api/vector-chunks", timeout=10)
+                    if chunks_resp.ok:
+                        all_chunks = chunks_resp.json()
+                    else:
+                        all_chunks = []
 
-                if chunks_resp.ok:
-                    all_chunks = chunks_resp.json()
-                    if all_chunks and isinstance(all_chunks, list) and len(all_chunks) > 0:
-                        # Convert to simple documents
-                        class SimpleDoc:
-                            def __init__(self, page_content, metadata):
-                                self.page_content = page_content
-                                self.metadata = metadata
+                # Convert to simple documents
+                class SimpleDoc:
+                    def __init__(self, page_content, metadata):
+                        self.page_content = page_content
+                        self.metadata = metadata
 
-                        docs = []
-                        metadatas = []
-                        for chunk in all_chunks:
+                docs = []
+                metadatas = []
+                for chunk in all_chunks:
+                    try:
+                        text = chunk.get('text', '')
+                        metadata = chunk.get('metadata', {}) or {}
+                        metadata['file_id'] = metadata.get('file_id', chunk.get('file_id'))
+                        metadata['file_name'] = chunk.get('file_name')
+                        metadata['course_id'] = metadata.get('course_id', chunk.get('course_id'))
+
+                        if metadata.get('source_type') == 'media_transcript':
                             try:
-                                text = chunk.get('text', '')
-                                metadata = chunk.get('metadata', {}) or {}
-                                metadata['file_id'] = metadata.get('file_id', chunk.get('file_id'))
-                                metadata['file_name'] = chunk.get('file_name')
+                                materials_resp = requests.get(f"{NODE_API_URL}/api/materials", timeout=5)
+                                if materials_resp.ok:
+                                    materials = materials_resp.json()
+                                    file_name = chunk.get('file_name', '')
+                                    for material in materials:
+                                        if material.get('file_name', '').strip().lower() == file_name.strip().lower() and material.get('source_type') == 'media_transcript':
+                                            metadata['file_id'] = material.get('file_id', metadata['file_id'])
+                                            break
+                                else:
+                                    logger.warning(f"Failed to get materials: {materials_resp.status_code}")
+                            except Exception as lookup_err:
+                                logger.warning(f"Could not look up Google Drive ID for {file_name}: {lookup_err}")
 
-                                # For media transcripts, ensure file_id is the Google Drive ID
-                                if metadata.get('source_type') == 'media_transcript':
-                                    try:
-                                        # Look up the Google Drive file_id from course_materials
-                                        materials_resp = requests.get(f"{NODE_API_URL}/api/materials", timeout=5)
-                                        if materials_resp.ok:
-                                            materials = materials_resp.json()
-                                            file_name = chunk.get('file_name', '')
-                                            for material in materials:
-                                                if material.get('file_name', '').strip().lower() == file_name.strip().lower() and material.get('source_type') == 'media_transcript':
-                                                    metadata['file_id'] = material.get('file_id', metadata['file_id'])
-                                                    break
-                                        else:
-                                            logger.warning(f"Failed to get materials: {materials_resp.status_code}")
-                                    except Exception as lookup_err:
-                                        logger.warning(f"Could not look up Google Drive ID for {file_name}: {lookup_err}")
+                        if text and len(text) > 10:
+                            docs.append(SimpleDoc(page_content=text, metadata=metadata))
+                            metadatas.append(metadata)
+                    except Exception as e:
+                        logger.warning(f"Could not load chunk: {e}")
 
-                                if text and len(text) > 10:
-                                    docs.append(SimpleDoc(page_content=text, metadata=metadata))
-                                    metadatas.append(metadata)
-                            except Exception as e:
-                                logger.warning(f"Could not load chunk: {e}")
-
-                        if docs:
-                            logger.info(f"Loading {len(docs)} documents from database")
-                            # Get embeddings
-                            texts = [d.page_content for d in docs]
-                            embeddings = app_state.embedding_manager.embed_documents(texts)
-                            app_state.vector_store.add_documents(docs, embeddings, metadatas)
-                            logger.info(f"Added {len(docs)} documents to vector store")
-                            has_vector_docs = True
+                if docs:
+                    logger.info(f"Loading {len(docs)} documents from database")
+                    texts = [d.page_content for d in docs]
+                    embeddings = app_state.embedding_manager.embed_documents(texts)
+                    app_state.vector_store.add_documents(docs, embeddings, metadatas)
+                    logger.info(f"Added {len(docs)} documents to vector store")
+                    has_vector_docs = True
             except Exception as load_err:
                 logger.warning(f"Failed to load chunks on demand: {load_err}")
 
@@ -5234,7 +5241,32 @@ def embed_drive_file():
                 })
             
             # Process PDF/document as usual
-            result = process_uploaded_file(file_path, file_id_new, course_id)
+            # Forward to cluster ingest service if configured
+            cluster_ingest_url = os.environ.get('CLUSTER_INGEST_URL', '').rstrip('/')
+            if cluster_ingest_url:
+                try:
+                    import requests as _req
+                    with open(file_path, 'rb') as fh:
+                        files = {'file': (file_name, fh)}
+                        data = {'course_id': course_id or ''}
+                        resp = _req.post(f"{cluster_ingest_url}/ingest", files=files, data=data, timeout=300)
+                    # Clean up temp file
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                    if os.path.exists(temp_dir):
+                        import shutil
+                        shutil.rmtree(temp_dir)
+                    if resp.ok:
+                        result = resp.json()
+                        logger.info(f"Cluster ingest result (drive): {result}")
+                    else:
+                        logger.error(f"Cluster ingest failed (drive): {resp.status_code} {resp.text}")
+                        result = {'success': False, 'error': f'Cluster ingest failed: {resp.text}'}
+                except Exception as e:
+                    logger.error(f"Cluster ingest error (drive): {e}")
+                    result = process_uploaded_file(file_path, file_id_new, course_id)
+            else:
+                result = process_uploaded_file(file_path, file_id_new, course_id)
             
             # Get the chunks that were just created and save to database
             if result.get('success') and hasattr(app_state, 'vector_store'):

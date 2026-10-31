@@ -1,0 +1,54 @@
+services:
+  # Flask backend (Python)
+  - type: web
+    name: vta-flask-backend
+    runtime: python
+    buildCommand: pip install -r Code/backend/requirements.txt
+    startCommand: cd Code/backend && gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: USE_MODEL_SERVER
+        value: "true"
+      - key: MODEL_SERVER_URL
+        sync: false  # Set to your tunnel URL, e.g. https://ollama.yourdomain.com
+      - key: MODEL_SERVER_API_KEY
+        sync: false
+      - key: MODEL_NAME
+        value: "vta-assistant"
+      - key: MODEL_TIMEOUT_SEC
+        value: "60"
+      - key: MODEL_MAX_TOKENS
+        value: "512"
+      - key: MODEL_TEMPERATURE
+        value: "0.2"
+      - key: EMBEDDING_PROVIDER
+        value: "ollama"
+      - key: OLLAMA_EMBEDDING_MODEL
+        value: "nomic-embed-text"
+      - key: CLUSTER_INGEST_URL
+        sync: false  # Set to your tunnel URL, e.g. https://ingest.yourdomain.com
+      - key: NODE_API_URL
+        sync: false  # Set to your Node backend URL on Render
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: UPLOAD_FOLDER
+        value: "/tmp/uploads"
+    plan: starter
+    region: oregon
+
+  # Node backend (Express + Supabase)
+  - type: web
+    name: vta-node-backend
+    runtime: node
+    buildCommand: cd server && npm install
+    startCommand: cd server && node index.js
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+    plan: starter
+    region: oregon

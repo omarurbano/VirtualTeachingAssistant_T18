@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "name": "vta-frontend",
+  "builds": [
+    {
+      "src": "Code/frontend/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "https://vta-flask-backend.onrender.com/api/$1"
+    },
+    {
+      "src": "/drive/(.*)",
+      "dest": "https://vta-flask-backend.onrender.com/drive/$1"
+    },
+    {
+      "src": "/uploads/(.*)",
+      "dest": "https://vta-flask-backend.onrender.com/uploads/$1"
+    },
+    {
+      "src": "/static/(.*)",
+      "dest": "/Code/frontend/static/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/Code/frontend/$1"
+    }
+  ]
+}
