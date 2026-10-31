@@ -3820,29 +3820,53 @@ def upload_file():
                 'error': f'File type not allowed. Allowed: {", ".join(app.config["ALLOWED_EXTENSIONS"])}'
             }), 400
         
-        # Save the file
+        # Save the file locally (temporary buffer)
         file_id = generate_file_id()
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}_{filename}")
         file.save(file_path)
-        
+
         logger.info(f"File saved: {file_path}")
-        
+
         # Get course_id from form data
         course_id = request.form.get('course_id')
-        
-        # Process the file
+
+        # Cluster ingest path: forward to cluster ingest service if configured
+        cluster_ingest_url = os.environ.get('CLUSTER_INGEST_URL', '').rstrip('/')
+        if cluster_ingest_url:
+            try:
+                import requests as _req
+                with open(file_path, 'rb') as fh:
+                    files = {'file': (filename, fh)}
+                    data = {'course_id': course_id or ''}
+                    resp = _req.post(f"{cluster_ingest_url}/ingest", files=files, data=data, timeout=300)
+                # Clean up local buffer
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                if resp.ok:
+                    result = resp.json()
+                    logger.info(f"Cluster ingest result: {result}")
+                    return jsonify(result)
+                else:
+                    logger.error(f"Cluster ingest failed: {resp.status_code} {resp.text}")
+                    return jsonify({'success': False, 'error': f'Cluster ingest failed: {resp.text}'}), 500
+            except Exception as e:
+                logger.error(f"Cluster ingest error: {e}")
+                # Fall through to local processing on failure
+                logger.info("Falling back to local processing")
+
+        # Process the file locally (fallback)
         logger.info(f"Processing file: {file_path}")
         result = process_uploaded_file(file_path, file_id, course_id)
-        
+
         logger.info(f"Processing result: {result}")
-        
+
         if not result['success']:
             # Clean up
             if os.path.exists(file_path):
                 os.remove(file_path)
             return jsonify(result), 400
-        
+
         return jsonify(result)
         
     except Exception as e:
