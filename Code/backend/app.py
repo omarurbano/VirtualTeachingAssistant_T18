@@ -1301,7 +1301,7 @@ def validate_image_file(file, max_size: int = None) -> Dict[str, Any]:
 # FILE PROCESSING
 # ============================================================================
 
-def process_pdf_multimodal(file_path: str, file_id: str) -> Dict[str, Any]:
+def process_pdf_multimodal(file_path: str, file_id: str, course_id: str = None) -> Dict[str, Any]:
     """
     Process PDF using multimodal extraction to capture text, tables, and images.
 
@@ -1354,6 +1354,8 @@ def process_pdf_multimodal(file_path: str, file_id: str) -> Dict[str, Any]:
 
         # Separate into LangChain documents for embedding
         documents = [chunk.to_langchain_document() for chunk in chunks]
+        for doc in documents:
+            doc.metadata['course_id'] = course_id  # needed for course-scoped retrieval
 
         # Generate embeddings with error handling
         try:
@@ -1665,7 +1667,7 @@ def process_uploaded_file(file_path: str, file_id: str, course_id: str = None) -
             if MULTIMODAL_AVAILABLE and app.config.get('USE_MULTIMODAL_PDF', True):
                 try:
                     logger.info(f"Processing PDF with multimodal extraction: {file_path}")
-                    return process_pdf_multimodal(file_path, file_id)
+                    return process_pdf_multimodal(file_path, file_id, course_id)
                 except Exception as multimodal_error:
                     logger.error(f"Multimodal processing failed, falling back to basic: {multimodal_error}")
                     logger.info(f"Processing PDF with basic loader: {file_path}")
@@ -5849,6 +5851,11 @@ def serve_media(file_id):
     except Exception as e:
         logger.error(f"Media serve error: {e}")
         abort(500, str(e))
+
+
+# MCQ practice mode routes (see mcq_practice.py)
+from mcq_practice import register_practice_routes
+register_practice_routes(app, app_state, auth_session, NODE_API_URL)
 
 
 # ============================================================================

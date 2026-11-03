@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Practice · VTA</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/practice.css">
+</head>
+<body>
+    <div class="dash-page">
+        <div class="dash-container practice-container">
+
+            <!-- ══ HEADER ══════════════════════════════════════════ -->
+            <header class="dash-header-row">
+                <div>
+                    <div class="eyebrow">Practice</div>
+                    <h1 class="dash-title">Practice <span class="accent">Quiz</span></h1>
+                    <p class="dash-sub">Answer questions from your class materials, one at a time.</p>
+                </div>
+                <div class="dash-actions">
+                    <a class="btn btn-ghost" href="/student/home">Back to dashboard</a>
+                </div>
+            </header>
+
+            <!-- ══ SETUP ═══════════════════════════════════════════ -->
+            <section class="card-surface practice-card" id="setupCard" aria-labelledby="setupHeading">
+                <h2 class="section-title" id="setupHeading">Choose your practice</h2>
+                <p class="section-sub">Pick a class and how hard you want the questions to be.</p>
+
+                <label class="input-label" for="courseSelect">Class</label>
+                <div class="input-shell">
+                    <select id="courseSelect" class="practice-select">
+                        <option value="">Loading classes...</option>
+                    </select>
+                </div>
+
+                <div class="input-label" id="difficultyLabel">Difficulty</div>
+                <div class="difficulty-group" role="radiogroup" aria-labelledby="difficultyLabel">
+                    <button type="button" class="difficulty-btn active" data-difficulty="easy" role="radio" aria-checked="true">Easy</button>
+                    <button type="button" class="difficulty-btn" data-difficulty="medium" role="radio" aria-checked="false">Medium</button>
+                    <button type="button" class="difficulty-btn" data-difficulty="hard" role="radio" aria-checked="false">Hard</button>
+                </div>
+
+                <button type="button" class="btn btn-primary practice-start" id="startBtn" disabled>Start practice</button>
+            </section>
+
+            <!-- ══ PROGRESS ════════════════════════════════════════ -->
+            <section class="practice-progress" id="progressBar" hidden aria-label="Your progress">
+                <div class="progress-item"><span class="progress-value" id="progAnswered">0</span><span class="progress-label">answered</span></div>
+                <div class="progress-item"><span class="progress-value" id="progCorrect">0</span><span class="progress-label">correct</span></div>
+                <div class="progress-item"><span class="progress-value" id="progStreak">0</span><span class="progress-label">streak</span></div>
+                <div class="progress-meta" id="progMeta"></div>
+            </section>
+
+            <!-- ══ QUESTION ════════════════════════════════════════ -->
+            <section class="card-surface practice-card" id="questionCard" hidden aria-live="polite">
+                <div class="practice-loading" id="questionLoading" hidden>
+                    <div class="cursor-line">Making your question</div>
+                </div>
+
+                <div class="practice-error" id="questionError" hidden>
+                    <div class="empty-state">
+                        <div class="empty-state-title" id="errorTitle">Something went wrong</div>
+                        <p class="empty-state-text" id="errorText"></p>
+                        <button type="button" class="btn btn-primary" id="retryBtn">Try again</button>
+                        <button type="button" class="btn btn-ghost" id="errorChangeBtn">Change class</button>
+                    </div>
+                </div>
+
+                <div id="questionBody" hidden>
+                    <p class="practice-question" id="questionText"></p>
+                    <div class="practice-options" id="optionsList" role="radiogroup" aria-label="Answer options"></div>
+
+                    <div class="hint-list" id="hintList"></div>
+
+                    <div class="practice-feedback" id="feedback" hidden>
+                        <div class="feedback-title" id="feedbackTitle"></div>
+                        <p class="feedback-text" id="feedbackText"></p>
+                        <p class="feedback-source" id="feedbackSource"></p>
+                    </div>
+
+                    <div class="practice-actions">
+                        <button type="button" class="btn btn-ghost" id="hintBtn">Get a hint</button>
+                        <button type="button" class="btn btn-primary" id="submitBtn" disabled>Check answer</button>
+                        <button type="button" class="btn btn-primary" id="nextBtn" hidden>Next question</button>
+                        <button type="button" class="btn btn-ghost" id="changeBtn" hidden>Change class</button>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </div>
+
+    <!-- Toasts -->
+    <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="/static/practice.js"></script>
+</body>
+</html>
